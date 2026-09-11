@@ -141,7 +141,7 @@ async function sendCatalog(phone, isFirstTime = false) {
 
 
     // Guardamos que este cliente ya recibió el catálogo
-    markCatalogSent(phone);
+    await markCatalogSent(phone);
 
     console.log(
       `Catálogo enviado correctamente a ${phone} ✅`
@@ -259,7 +259,7 @@ app.post("/webhook", async (req, res) => {
 
 
     const alreadyReceivedCatalog =
-      hasReceivedCatalog(phone);
+      await hasReceivedCatalog(phone);
 
 
     const wantsCatalog =

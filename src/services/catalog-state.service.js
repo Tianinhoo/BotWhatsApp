@@ -1,55 +1,71 @@
-const fs = require("fs");
-const path = require("path");
+const { Pool } = require("pg");
 
-const DATA_DIR = path.join(__dirname, "..", "..", "data");
-const DATA_FILE = path.join(DATA_DIR, "catalog-state.json");
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
 
-function ensureFile() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+
+// ======================================================
+// CONSULTAR SI YA RECIBIÓ EL CATÁLOGO
+// ======================================================
+
+async function hasReceivedCatalog(phone) {
+
+  const result = await pool.query(
+    `
+      SELECT catalogo_enviado
+      FROM clientes_whatsapp
+      WHERE telefono = $1
+      LIMIT 1
+    `,
+    [phone]
+  );
+
+  if (result.rows.length === 0) {
+    return false;
   }
 
-  if (!fs.existsSync(DATA_FILE)) {
-    fs.writeFileSync(
-      DATA_FILE,
-      JSON.stringify({ clientes: [] }, null, 2)
-    );
-  }
+  return result.rows[0].catalogo_enviado === true;
 }
 
-function getData() {
-  ensureFile();
 
-  try {
-    return JSON.parse(
-      fs.readFileSync(DATA_FILE, "utf8")
-    );
-  } catch {
-    return { clientes: [] };
-  }
-}
+// ======================================================
+// MARCAR CATÁLOGO COMO ENVIADO
+// ======================================================
 
-function saveData(data) {
-  fs.writeFileSync(
-    DATA_FILE,
-    JSON.stringify(data, null, 2)
+async function markCatalogSent(phone) {
+
+  await pool.query(
+    `
+      INSERT INTO clientes_whatsapp (
+        telefono,
+        catalogo_enviado,
+        fecha_catalogo,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        $1,
+        true,
+        now(),
+        now(),
+        now()
+      )
+
+      ON CONFLICT (telefono)
+
+      DO UPDATE SET
+        catalogo_enviado = true,
+        fecha_catalogo = now(),
+        updated_at = now()
+    `,
+    [phone]
   );
 }
 
-function hasReceivedCatalog(phone) {
-  const data = getData();
-
-  return data.clientes.includes(phone);
-}
-
-function markCatalogSent(phone) {
-  const data = getData();
-
-  if (!data.clientes.includes(phone)) {
-    data.clientes.push(phone);
-    saveData(data);
-  }
-}
 
 module.exports = {
   hasReceivedCatalog,
