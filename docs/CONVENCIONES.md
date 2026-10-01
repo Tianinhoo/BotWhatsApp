@@ -196,11 +196,20 @@ o permitir procesos solapados durante despliegues, implementar coordinación
 distribuida (p. ej., locks apropiados o cola compartida). La configuración del plan
 de hosting por sí sola no garantiza exclusión entre procesos.
 
-No hay durabilidad ni recuperación tras reinicio. BRIEF-027 debe conservar los
-mensajes y coordinar reintentos; BRIEF-032 debe drenar la cola antes de cerrar la BD.
+[ByCodex] 2026-10-01: BRIEF-027 agrega recepción durable antes del 200.
+Solo se recuperan automáticamente mensajes no iniciados; fallos inciertos requieren
+revisión y bloquean sucesores del teléfono. BRIEF-032 debe drenar antes de cerrar BD.
 Las escrituras administrativas no quedan serializadas automáticamente: cualquier
 nuevo flujo que modifique el estado debe evaluar su coordinación por teléfono.
 
 Al modificar la cola, verificar FIFO, clientes independientes, fallo seguido de
 trabajos pendientes, GC con un sucesor activo, aviso sin liberación, dedup lenta y
 regresión catálogo/handoff. Las pruebas de espera usan un reloj controlado/gates.
+
+## 12. Recepción durable — [ByCodex] (BRIEF-027)
+
+Aplicar 009 antes de arrancar; estado processing anterior se trata como incierto
+al reiniciar una única instancia. Usar scripts/inbox-review.js para listar casos;
+resolver requiere verificar/atender la conversación, nunca reenviar automáticamente.
+Las integraciones con tablas temporales sobre Neon deben mantener una transacción
+que fije la conexión: el pool es por transacción, no una sesión estable.

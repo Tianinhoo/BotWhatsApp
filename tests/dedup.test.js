@@ -44,6 +44,10 @@ function webhook(deps, logs = []) {
     "./routes/dashboard": () => {},
     // [ByCodex] (Aislar la conexión del endpoint health añadido en paralelo).
     "./services/db": {},
+    // [ByCodex] (BRIEF-027) Persistencia aislada para las regresiones del contrato dedup.
+    "./services/inbox.service": { createInbox: () => require("./helpers/inbox-harness").memoryInbox({
+      log: (...args) => logs.push(args.join(" "))
+    }) },
     "./services/state.service": {},
     "./services/messages.service": {},
     ...deps
@@ -51,12 +55,12 @@ function webhook(deps, logs = []) {
   assert.deepEqual(logs.splice(startupStart), [
     "[HMAC] Modo development sin APP_SECRET — validación desactivada."
   ]);
-  return async (message) => {
+  return async (message, expectedStatus = 200) => {
     const statuses = [];
     await handler({ body: { entry: [{ changes: [{ value: {
       messages: message ? [message] : undefined
     } }] }] } }, { sendStatus: (status) => statuses.push(status) });
-    assert.deepEqual(statuses, [200]);
+    assert.deepEqual(statuses, [expectedStatus]);
   };
 }
 
@@ -103,7 +107,7 @@ test("webhook de estados sin mensaje: no reserva ni produce efectos", async () =
   assert.deepEqual(logs, []);
 });
 
-test("sin wamid conserva compatibilidad del simulador local", async () => {
+test("sin wamid rechaza sin efectos para no perder deduplicacion", async () => {
   const calls = [];
   const run = webhook({
     "./services/dedup.service": {},
@@ -114,8 +118,8 @@ test("sin wamid conserva compatibilidad del simulador local", async () => {
       STATES: { PAUSED_HUMAN: "PAUSED_HUMAN" }
     }
   });
-  await run({ from: "test-phone", type: "text", text: { body: "hola" } });
-  assert.deepEqual(calls, ["trafico", "mensaje"]);
+  await run({ from: "test-phone", type: "text", text: { body: "hola" } }, 400);
+  assert.deepEqual(calls, []);
 });
 
 test("PostgreSQL: concurrencia, menú y handoff sin duplicar filas ni estado", {
@@ -195,9 +199,8 @@ test("PostgreSQL: concurrencia, menú y handoff sin duplicar filas ni estado", {
       await Promise.all([run(message), run(message)]);
       assert.deepEqual(await snapshot(phone), before);
       assert.equal(sent.length - initialSent, responses);
-      assert.deepEqual(logs.slice(logCount), Array(2).fill(
-        `[dedup] wamid ${message.id} ya procesado, ignoro.`
-      ));
+      // [ByCodex] (BRIEF-027) Inbox descarta antes de la reserva legacy.
+      assert.deepEqual(logs.slice(logCount), []);
     }
     assert.equal(logs.some((line) => /Error|error/i.test(line)), false);
   } finally {

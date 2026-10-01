@@ -91,7 +91,7 @@ test("webhook: otro telefono recibe atencion mientras el catalogo esta pendiente
   assert.equal(second.status, 200);
 });
 
-test("webhook: fallo de dedup no salta los mensajes siguientes ya encolados", async () => {
+test("webhook: fallo incierto conserva sucesores pendientes hasta revision", async () => {
   const gate = deferred(), started = deferred();
   const h = integration({ claim: async id => {
     if (id === "wamid.fail") { started.resolve(); await gate.promise; throw new Error("fallo simulado"); }
@@ -102,8 +102,10 @@ test("webhook: fallo de dedup no salta los mensajes siguientes ya encolados", as
   const second = h.app.webhook(body("wamid.next", "6"));
   gate.resolve();
   await Promise.all([first, second]);
-  assert.deepEqual(h.incoming.map(row => row[2]), ["6"]);
-  assert.equal(h.states.get("00000001234"), "PAUSED_HUMAN");
+  // [ByCodex] (BRIEF-027) No perder ni adelantar el sucesor frente a un fallo incierto.
+  assert.deepEqual(h.incoming, []);
+  assert.equal(h.app.inbox.records.get("wamid.fail").estado, "revision");
+  assert.equal(h.app.inbox.records.get("wamid.next").estado, "recibido");
   assert.equal(h.app.logs.filter(log => log.level === "error").length, 1);
 });
 
@@ -161,9 +163,11 @@ test("lote: fallo de un mensaje no descarta el siguiente del mismo telefono", as
   const payload = JSON.parse(body("bad", "1").toString());
   payload.entry[0].changes[0].value.messages.push({ id: "good", from: "00000001234", type: "text", text: { body: "6" } });
   await h.app.webhook(Buffer.from(JSON.stringify(payload)));
-  assert.deepEqual(h.claims, ["bad", "good"]);
-  assert.equal(h.states.get("00000001234"), "PAUSED_HUMAN");
-  assert.equal(h.motor.summaries.length, 1);
+  // [ByCodex] (BRIEF-027) Guardado durable, sin saltar un resultado incierto.
+  assert.deepEqual(h.claims, ["bad"]);
+  assert.equal(h.app.inbox.records.get("bad").estado, "revision");
+  assert.equal(h.app.inbox.records.get("good").estado, "recibido");
+  assert.equal(h.motor.summaries.length, 0);
 });
 
 test("lote: telefono distinto avanza mientras el primero espera", async () => {

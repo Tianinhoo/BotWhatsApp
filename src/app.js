@@ -35,7 +35,9 @@ const pool = require("./services/db");
 const { tryClaimMessage } = require("./services/dedup.service");
 
 // [ByCodex] (BRIEF-026) Serializar antes de cualquier consulta por mensaje.
-const { processInOrder } = require("./services/queue.service");
+// [ByCodex] (BRIEF-027) La recepcion durable coordina la cola por telefono.
+const { createInbox } = require("./services/inbox.service");
+const inbox = createInbox(pool);
 
 const dashboard = require("./routes/dashboard");
 
@@ -220,10 +222,10 @@ async function processIncoming(value, message) {
     // [ByCodex] (BRIEF-026) Encolar antes de dedup: una consulta lenta no
     // reordena mensajes. La cola conserva el turno hasta terminar realmente.
     const phone = message.from;
-    return processInOrder(phone, async () => {
+    // [ByCodex] El turno FIFO lo mantiene inbox durante este pipeline completo.
       // [ByCodex] (BRIEF-002: solo el primer INSERT procesa este wamid).
       // Se ejecuta antes de logs, tráfico, historial, estado o respuestas.
-      // Sin id conservamos el flujo anterior para simuladores locales.
+      // [ByCodex] El inbox exige id; esta reserva conserva compatibilidad historica.
       if (message.id) {
         const isNew = await tryClaimMessage(message.id, message.from);
         if (!isNew) {
@@ -343,17 +345,19 @@ async function processIncoming(value, message) {
           "Elegí una de las opciones del menú para que te ayudemos 👇"
       });
 
-    });
 }
 
 app.post("/webhook", verifyMetaSignature, async (req, res) => {
-  // [ByCodex] Recepcion durable antes del 200: pendiente de BRIEF-027.
+  // [ByCodex] (BRIEF-027) No confirmar antes de la transaccion de recepcion.
+  let receipt;
+  try {
+    receipt = await inbox.receive(collectIncoming(req.body));
+  } catch (error) {
+    console.error("[inbox] recepcion fallida:", safeError(error));
+    return res.sendStatus(error.code === "INVALID_INBOUND" ? 400 : 503);
+  }
   res.sendStatus(200);
-  await Promise.all(collectIncoming(req.body).map(({ value, message }) =>
-    processIncoming(value, message).catch(error => {
-      console.error("Error procesando webhook:", safeError(error));
-    })
-  ));
+  await receipt.done;
 });
 
 
@@ -394,6 +398,9 @@ if (process.env.NODE_ENV === "production" && !process.env.APP_SECRET) {
     "APP_SECRET obligatorio en producción para validar webhooks de Meta."
   );
 }
+
+// [ByCodex] (BRIEF-027) Recuperar solo recepciones no iniciadas; fallos a revision.
+inbox.start(processIncoming);
 
 app.listen(PORT, () => {
 

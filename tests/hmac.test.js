@@ -57,7 +57,8 @@ for (const environment of ["development", "test"]) {
     assertProcessed(fixture);
     fixture.calls.length = 0;
     await fixture.webhook(incomingBody());
-    assertProcessed(fixture);
+    // [ByCodex] (BRIEF-027) Mismo wamid: HMAC acepta, inbox no repite efectos.
+    assert.deepEqual(fixture.calls, []);
     assert.deepEqual(fixture.logs.filter(log => log.level === "warn"), [warning]);
   });
 }

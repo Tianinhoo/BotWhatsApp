@@ -8,7 +8,7 @@ const vm = require("node:vm");
 function appHarness({ env = { NODE_ENV: "test" }, query, listenCalls = [], overrides = {} } = {}) {
   const routes = new Map();
   const logs = [], calls = [], queries = [], timers = [];
-  let jsonOptions;
+  let jsonOptions, inboxStore;
   let now = 0;
   const app = {
     use() {},
@@ -27,6 +27,10 @@ function appHarness({ env = { NODE_ENV: "test" }, query, listenCalls = [], overr
     "./routes/dashboard": () => {},
     // [ByCodex] (BRIEF-026) Usar la cola real tambien en pruebas HMAC/dedup.
     "./services/queue.service": require("../../src/services/queue.service"),
+    // [ByCodex] (BRIEF-027) Inbox real sobre almacenamiento aislado.
+    "./services/inbox.service": { createInbox: () => (inboxStore = require("./inbox-harness").memoryInbox({
+      log: (...args) => logs.push({ level: "error", message: args.join(" ") })
+    })) },
     "./services/db": {
       query(sql) {
         queries.push(sql);
@@ -120,7 +124,7 @@ function appHarness({ env = { NODE_ENV: "test" }, query, listenCalls = [], overr
     await Promise.resolve();
   }
 
-  return { logs, calls, queries, timers, listenCalls, advance,
+  return { logs, calls, queries, timers, listenCalls, advance, get inbox() { return inboxStore; },
     webhook: (rawBody, headers) => dispatch("POST", "/webhook", rawBody, headers),
     health: () => dispatch("GET", "/health") };
 }

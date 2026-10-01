@@ -39,7 +39,7 @@ Hoy el árbol V1 tiene:
 1. **Nuevo sub-estado `WAITING_PRODUCT_SELECTION`.**
    - Agregarlo al enum `STATES` de `state.service.js`.
    - Agregarlo al CHECK constraint de la columna `estado_conversacion`
-     en `clientes_whatsapp` (migración nueva `008_waiting_product_selection.sql`
+     en `clientes_whatsapp` (migración nueva `010_waiting_product_selection.sql`
      con DO $$...$$ que droppea y recrea el constraint para incluir el
      nuevo valor; preservar que PostgreSQL < 15 no soporta ADD CONSTRAINT
      IF NOT EXISTS igual que BRIEF-004).
@@ -118,7 +118,7 @@ Hoy el árbol V1 tiene:
    "agotado confirmado" (stock) o "muestra gratuita" (precio).
 
    **Opción A (preferida — cambio de tipo sin UPDATE masivo):**
-   - Migración `008_precios_stock_nullable.sql` cambia **solo el tipo**:
+   - Migración `011_precios_stock_nullable.sql` cambia **solo el tipo**:
      ```sql
      ALTER TABLE productos
        ALTER COLUMN precio DROP DEFAULT,
@@ -202,7 +202,7 @@ Hoy el árbol V1 tiene:
 
 ## Aceptación
 
-- [ ] Migración `008_waiting_product_selection.sql` agrega estado al
+- [ ] Migración `010_waiting_product_selection.sql` agrega estado al
       CHECK y agrega columna `prenda_seleccionada_id`.
 - [ ] `STATES.WAITING_PRODUCT_SELECTION` en `state.service.js`.
 - [ ] Lista interactiva se envía al final de rutas 1 y 2.
@@ -238,7 +238,7 @@ Hoy el árbol V1 tiene:
 
 ## Notas técnicas sugeridas
 
-**Migración 008 (ejemplo):**
+**Migración 010 (ejemplo):**
 
 ```sql
 -- Agregar nuevo valor al CHECK existente
@@ -332,3 +332,5 @@ function extractSelection(message, state, cliente) {
   guardar `producto_id` (no string), actualizar CHECK (no solo columna),
   mostrar precios solo si confirmados, cambio de prenda explícito,
   prevenir pisado de PAUSED_HUMAN.
+
+<!-- [ByCodex] 2026-10-01: 009 aplicada por BRIEF-027; selección reserva 010 y datos confirmados 011, sujetas a verificar el máximo al implementarlas. No se crearon estas migraciones aún. -->
