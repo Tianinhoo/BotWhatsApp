@@ -1,13 +1,13 @@
 # Tablero de tareas
 
 Tablero vivo. Cada dueño actualiza el estado de su brief acá.
-Última actualización: 2026-10-01 por Codex (cierre local verificado de BRIEF-026; demás tareas preservadas).
+Última actualización: 2026-10-01 por Codex (027/028/029 y timeout C1 verificados; GitHub y Meta pendientes).
 
 ## Cierre y preparación — 2026-10-01
 
 | ID | Título | Dueño | Estado | Notas |
 |---|---|---|---|---|
-| BRIEF-033 | Consolidación Git y runtime Node 22 | Codex | EN PROGRESO | Checkpoint, respaldo remoto y preparación de Fase 0. |
+| BRIEF-033 | Consolidación Git y runtime Node 22 | Codex | BLOQUEADO REMOTO | Checkpoints locales; Node22/PG 176/176. Push autorizado pero GitHub responde Repository not found. |
 
 ## P0 — Bloquean el deploy
 
@@ -41,14 +41,17 @@ Estos bloquean la Fase 0. Se hicieron visibles tras la auditoría externa del 20
 > plan V1 original aún abiertos). Estos bloquean una Fase 0 honesta sobre
 > el recorrido completo. Recomendación del revisor: **un único responsable**
 > cierra en orden; no se reparte.
+> [ByCodex] 2026-10-01: criterio actualizado con autorización del usuario.
+> Conexión A puede adelantarse; B requiere 027/028/029 y C1 de 030.
+> 025 se posterga; C2, 031 y 032 conservan sus límites documentados.
 
 | ID | Título | Dueño | Estado | Notas |
 |---|---|---|---|---|
 | BRIEF-026 | Serialización por teléfono (resuelve B1 del escáner) | Codex | HECHO | [ByCodex] 2026-10-01: cola ANTES de dedup, trabajo completo por teléfono, fallos no saltan sucesores, aviso sin liberar; 11 regresiones nuevas y suite 155 aprobadas/6 omitidas/0 fallidas. Cierre local, sin commit/despliegue. Una sola instancia Node. |
-| BRIEF-027 | Compensación de wamid tras fallo (resuelve B2) | por asignar | TODO | *"Guardar la recepción antes de confirmarla y recuperación ante fallos"* del plan V1. Hoy un wamid claimed sin procesar bien se pierde. |
-| BRIEF-028 | Iterar todos los `entry.changes` y `value.messages` (resuelve A4) | por asignar | TODO | *"Procesar todos los mensajes recibidos en un mismo webhook"* del plan V1. Hoy solo `entry[0].changes[0].value.messages[0]`. |
-| BRIEF-029 | Fail-closed en lectura de estado | por asignar | TODO | *"Detener el procesamiento cuando no se pueda consultar el estado"* del plan V1. Hoy `getUserState` fallback silencioso a `ORGANIC` → mete al cliente en un flujo equivocado. |
-| BRIEF-030 | Timeout + circuit breaker en WhatsApp API (resuelve C1 + C2) | por asignar | TODO | Protege Node de la degradación de Meta. |
+| BRIEF-027 | Recepción durable y revisión de fallos | Codex | HECHO LOCAL + BD | 009 aplicada; commit antes de HTTP 200; recuperación conservadora; Node22/PG: 176/176. Una instancia. |
+| BRIEF-028 | Procesar todos los mensajes de un webhook | Codex | HECHO LOCAL | Todos los niveles, contacto por wa_id, aislamiento de fallos y paralelismo; Node 22: 160 pass/6 skip. |
+| BRIEF-029 | Detener ante fallo de lectura de estado | Codex | HECHO LOCAL | 2026-10-01: error propagado, sin envíos/transiciones; 156 pass/6 skip. Recuperación depende de 027. |
+| BRIEF-030 | Timeout Meta + evaluación de circuit breaker | Codex | PARCIAL | C1: cancelación a 8s en todo envío, Node22 162 pass/6 skip; C2 pendiente, sin reintentos ciegos. |
 | BRIEF-031 | Media entrante y mensajes no-texto (resuelve A1) | por asignar | TODO | Audio/sticker/image hoy caen a hint genérico. Mínimo: fallback honesto a asesora. |
 | BRIEF-032 | SIGTERM handler + cierre limpio de pool (resuelve G2) | por asignar | TODO | Railway envía SIGTERM en deploy. Hoy conexiones a Neon se cortan a mitad. |
 
@@ -56,7 +59,7 @@ Estos bloquean la Fase 0. Se hicieron visibles tras la auditoría externa del 20
 
 | ID | Título | Dueño | Estado | Notas |
 |---|---|---|---|---|
-| BRIEF-010 | Fase 0: conexión A y recorrido B | Humano + Codex | EN PREPARACIÓN | A: HMAC/BD/Meta listos. B: 027–029 y timeout de 030; 025 posterior. Ver brief actualizado. |
+| BRIEF-010 | Fase 0: conexión A y recorrido B | Humano + Codex | PENDIENTE META | BD/migraciones y protecciones mínimas verificadas. Falta APP_SECRET y configurar conexión. C2, 031/032 y 025 siguen separados. |
 
 ## P1 — Deploy
 

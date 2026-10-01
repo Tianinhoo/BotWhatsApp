@@ -34,8 +34,8 @@ durante la sesión. No se exige un número artificial de hallazgos para aprobar.
 
 **HMAC es obligatorio desde la primera prueba con un túnel público.**
 Una URL aleatoria no reemplaza la validación de firmas. En el código actual,
-sin APP_SECRET y con NODE_ENV=production el webhook rechaza con 500; el proceso
-puede arrancar de todos modos, por lo que arrancar no prueba estar bien configurado.
+sin APP_SECRET y con NODE_ENV=production el proceso rechaza el arranque.
+En otros entornos no exceptuados, el middleware rechaza el webhook con 500.
 
 ## Conexión de prueba
 
@@ -75,7 +75,7 @@ simulado; los testers no sustituyen esas regresiones.
 | Etapa / escenario | Esperado | Observado | Evidencia | Pendiente |
 |---|---|---|---|---|
 | A — conexión Meta | Mensaje firmado recibido y respondido | No ejecutado | — | APP_SECRET y configuración Meta |
-| B — recorrido | Todos los escenarios registrados | No ejecutado | — | Protecciones mínimas y etapa A |
+| B — recorrido | Todos los escenarios registrados | No ejecutado | 027/028/029/C1 verificados localmente y BD | Etapa A y testers |
 
 ## Cierre de sesión
 
@@ -90,3 +90,9 @@ de drenaje ordenado. No considerar la prueba un despliegue productivo.
   contradictorias al final.
 - 2026-10-01 — Codex unifica requisitos, separa conexión A de recorrido B y
   retira el token literal. No se ejecutó todavía una prueba WhatsApp real.
+
+## Preparación verificada — [ByCodex] 2026-10-01
+Node 22.23.3, 176 pruebas con PostgreSQL aprobadas, ninguna omitida. Migración 009 aplicada.
+Comprobación: node scripts/preflight.js (usar Node 22 y NODE_ENV=production).
+Estado actual: falta APP_SECRET; credenciales Meta presentes pero no validadas.
+Revisión de casos inciertos: node scripts/inbox-review.js. No hay bandeja visual todavía.

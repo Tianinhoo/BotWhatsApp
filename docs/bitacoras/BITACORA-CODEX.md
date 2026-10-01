@@ -4,6 +4,48 @@ Diario personal. Entradas más recientes arriba.
 
 ---
 
+## 2026-10-01 — Recepción durable, migración y cierre de integración
+
+**Qué hice:** BRIEF-027 implementado con transacción antes del 200, duplicados sin
+efectos, recuperación de no iniciados y revisión conservadora de envíos inciertos.
+Agregué scripts/inbox-review.js y scripts/preflight.js. Migración 009 aplicada.
+028/029 y timeout C1 quedan verificados en conjunto. C2/031/032/025 siguen pendientes.
+
+**Verificación:** Node 22.23.3 + DEDUP_TEST_DATABASE=1: **176 aprobadas, 0 fallidas,
+0 omitidas**, 13338.1617 ms. Sin envíos reales. Preflight: BD y esquema OK; APP_SECRET falta.
+
+**Problemas corregidos:** prueba temporal inicial asumía sesión estable, pero Neon
+usa pool por transacción. Se fijó BEGIN exterior, tabla de nombre único, SAVEPOINT
+para recepciones y ROLLBACK al cerrar. Dos recibos sintéticos sql-a/sql-b quedaron
+en la tabla nueva durante esa prueba; limpieza acotada por ids, teléfono y contenido
+de prueba eliminó exactamente 2. Expectativas legacy ajustadas porque el inbox
+descarta duplicados antes de tryClaimMessage. Un caso incierto conserva sucesores
+pendientes: no los pierde ni los adelanta.
+
+**Bloqueos externos:** push autorizado explícitamente, remoto responde Repository
+not found; consulta al usuario pendiente. Primera prueba Meta espera APP_SECRET.
+
+## 2026-10-01 — Consolidación, Node 22 y protecciones de entrada/salida
+**Qué hice:**
+- Checkpoint b151221 del trabajo compartido; 105 archivos revisados buscando
+  credenciales locales y patrones de tokens. Se retiró VERIFY_TOKEN literal
+  de DOCUMENTACION y BRIEF-010; .env sigue fuera de Git.
+- Node oficial 22.23.3 descargado en TEMP y SHA256 verificado; Node global intacto.
+- BRIEF-029 propaga errores de estado; BRIEF-028 procesa todos los mensajes del
+  lote, conserva FIFO y relaciona contactos por wa_id.
+- BRIEF-030: cancelación real de peticiones a los 8s, sin reintentos ciegos.
+- BRIEF-010 distingue conexión A de recorrido B, exige HMAC y posterga 025.
+
+**Verificación:** Node 22.23.3, 168 casos/162 aprobados/6 PostgreSQL omitidos/0 fallos.
+**Bloqueos:** push autorizado explícitamente, pero GitHub devuelve Repository not
+found. Esperando URL/acceso del usuario. BD configurada agotó conexión de 5s;
+APP_SECRET ausente. No se enviaron WhatsApps ni se abrió túnel.
+**Problemas durante preparación:** falso positivo de URL de BD corregido (era un
+ejemplo); npm exec no finalizó y se sustituyó por distribución oficial; un script
+intentó reasignar const después de editar app.js, se corrigió el paso documental.
+**Límites:** 027 sigue pendiente; C2/circuit breaker no implementado. No hay prueba
+real ni declaración de preparación productiva.
+
 ## 2026-10-01 — BRIEF-026 implementado — [ByCodex]
 
 **Qué hice:** implementé FIFO por teléfono antes de deduplicar, integrada con el
