@@ -1,31 +1,27 @@
-# BRIEF-030 — Timeout + circuit breaker en WhatsApp API (stub)
+# BRIEF-030 — Tiempo límite de envíos Meta; circuito pendiente
+<!-- [ByCodex] 2026-10-01 -->
+- **Dueño:** Codex.
+- **Estado:** PARCIAL: C1 implementado/verificado; C2 pendiente de evaluación.
+- **Prioridad:** P0 para C1; C2 no bloquea la conexión supervisada.
+- **Creado:** 2026-09-30.
 
-- **Dueño:** por asignar
-- **Estado:** TODO (stub)
-- **Prioridad:** P0 pre-Fase 0 (ronda 2)
-- **Creado:** 2026-09-30
-- **Resuelve:** C1 + C2 del `../auditoria/02-Escaner-Vulnerabilidades.md`.
+## Implementado
+Todos los envíos (texto, imagen, lista/menú, botones) pasan por postMessage.
+Cada petición tiene timeout Axios de 8s y AbortController con temporizador de 8s:
+se cancela la petición subyacente; no se libera la cola mediante Promise.race.
+El temporizador se limpia tanto en aceptación como rechazo.
 
-## Objetivo
+Sin reintentos automáticos. Un timeout no demuestra que Meta no aceptó el envío.
+El contrato outbound existente conserva estado pendiente cuando no hay respuesta,
+evitando declarar fallido un envío incierto o duplicarlo automáticamente.
 
-Proteger el proceso Node de la degradación de Meta. Hoy
-`whatsapp.service.js` llama a Meta sin timeout explícito. Si Meta
-responde lento o cuelga, cada mensaje entrante consume event loop + pool
-Postgres hasta OOM.
+## Verificación
+Node 22.23.3: 168 casos, 162 aprobados, 6 omitidos, 0 fallidos.
+Regresiones con reloj y transporte controlados comprueban cancelación, propagación,
+una única petición por envío y limpieza de temporizadores en todos los caminos.
 
-## Alcance propuesto (a confirmar)
-
-- `AbortController` en cada llamada a Meta con `signal` a 8s por envío.
-- Retry con backoff exponencial (3 intentos: 500ms, 2s, 6s) para errores
-  transitorios (5xx, timeout). No retry para 4xx (errores de payload).
-- Circuit breaker (sugerido `opossum`): si 10 fallos en 60s → abrir
-  circuito 5 min. Durante circuito abierto, los sends se marcan como
-  `fallido` sin intentar.
-- Métricas por lado para alerta: `meta_send_duration_seconds`,
-  `meta_send_failures_total`, `meta_circuit_state`.
-
-## Nota
-
-Este brief resuelve el síntoma raíz que llevó a querer un timeout en
-BRIEF-026. Con BRIEF-030 implementado, un cuelgue de Meta ya no se
-propaga a la cola de BRIEF-026.
+## Pendiente
+Circuit breaker, métricas y política de reintentos seguros requieren evaluación
+tras la primera conexión. No se agrega opossum ni node-cron en este cambio.
+Este brief no limita consultas PostgreSQL ni reemplaza recepción duradera (027).
+No se verificó comportamiento con Meta real.

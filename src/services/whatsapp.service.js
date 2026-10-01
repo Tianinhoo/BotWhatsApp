@@ -1,4 +1,18 @@
 const axios = require("axios");
+// [ByCodex] (BRIEF-030) Plazo total que cancela la peticion real, sin reintentos.
+const { setTimeout, clearTimeout } = require("node:timers");
+const SEND_TIMEOUT_MS = 8000;
+async function postMessage(payload) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);
+  timer.unref?.();
+  try {
+    return await axios.post(buildMessagesUrl(), payload, {
+      headers: buildHeaders(), timeout: SEND_TIMEOUT_MS, signal: controller.signal
+    });
+  } finally { clearTimeout(timer); }
+}
+
 
 // [ByOpenCode] (BRIEF-006) safeError descarta error.config (lleva el
 // Bearer token) en los logs de errores de axios.
@@ -33,8 +47,7 @@ function buildHeaders() {
 // Función existente: envía un mensaje de texto simple por WhatsApp.
 async function sendTextMessage(to, text) {
   try {
-    const response = await axios.post(
-      buildMessagesUrl(),
+    const response = await postMessage(
       {
         messaging_product: "whatsapp",
         recipient_type: "individual",
@@ -43,8 +56,7 @@ async function sendTextMessage(to, text) {
         text: {
           body: text
         }
-      },
-      { headers: buildHeaders() }
+      }
     );
     return response.data;
   } catch (error) {
@@ -62,8 +74,7 @@ async function sendTextMessage(to, text) {
 // Función existente: envía una imagen a través del media_id de Meta.
 async function sendImageMessage(to, imageId, caption = "") {
   try {
-    const response = await axios.post(
-      buildMessagesUrl(),
+    const response = await postMessage(
       {
         messaging_product: "whatsapp",
         recipient_type: "individual",
@@ -73,8 +84,7 @@ async function sendImageMessage(to, imageId, caption = "") {
           id: imageId,
           caption: caption
         }
-      },
-      { headers: buildHeaders() }
+      }
     );
     return response.data;
   } catch (error) {
@@ -179,16 +189,14 @@ async function sendListMessage({
       }
     };
 
-    const response = await axios.post(
-      buildMessagesUrl(),
+    const response = await postMessage(
       {
         messaging_product: "whatsapp",
         recipient_type: "individual",
         to: to,
         type: "interactive",
         interactive: interactive
-      },
-      { headers: buildHeaders() }
+      }
     );
     return response.data;
   } catch (error) {
@@ -225,8 +233,7 @@ async function sendButtonMessage({
       }
     }));
 
-    const response = await axios.post(
-      buildMessagesUrl(),
+    const response = await postMessage(
       {
         messaging_product: "whatsapp",
         recipient_type: "individual",
@@ -239,8 +246,7 @@ async function sendButtonMessage({
             buttons: replyButtons
           }
         }
-      },
-      { headers: buildHeaders() }
+      }
     );
     return response.data;
   } catch (error) {

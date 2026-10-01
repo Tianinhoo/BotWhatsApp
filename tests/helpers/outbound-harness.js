@@ -9,6 +9,8 @@ function load(file, deps, logs) {
   const nativeRequire = createRequire(filename);
   const module = { exports: {} };
   vm.runInNewContext(readFileSync(filename, "utf8"), {
+    // [ByCodex] (BRIEF-030) Cancelacion real en el transporte simulado.
+    AbortController,
     module, exports: module.exports, process: { env: {} },
     require: name => Object.hasOwn(deps, name) ? deps[name] : nativeRequire(name),
     console: Object.fromEntries(["log", "warn", "error"].map(name =>
