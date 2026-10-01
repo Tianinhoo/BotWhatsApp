@@ -4,6 +4,9 @@ const axios = require("axios");
 const fs = require("fs");
 const FormData = require("form-data");
 
+// [ByOpenCode] (BRIEF-006) safeError: nunca loguear error.config (token).
+const { safeError } = require("./services/logger.service");
+
 async function uploadImage() {
   try {
     const form = new FormData();
@@ -33,9 +36,10 @@ async function uploadImage() {
     console.log("MEDIA_ID:", response.data.id);
 
   } catch (error) {
+    // [ByOpenCode] (BRIEF-006) CUIDADO → safeError.
     console.error(
       "ERROR:",
-      error.response?.data || error.message
+      safeError(error)
     );
   }
 }

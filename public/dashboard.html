@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Panel — Cecilia Tedin Bot</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --panel-2: #273449;
+    --border: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #22c55e;
+    --accent-2: #16a34a;
+    --client: #334155;
+    --bot: #14532d;
+    --danger: #ef4444;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ---------- Login ---------- */
+  #login-overlay {
+    position: fixed; inset: 0; z-index: 50;
+    background: var(--bg);
+    display: none; align-items: center; justify-content: center;
+  }
+  #login-overlay.show { display: flex; }
+  .login-card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 32px; width: 320px;
+    text-align: center;
+  }
+  .login-card h1 { font-size: 20px; margin-bottom: 4px; }
+  .login-card p { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .login-card input {
+    width: 100%; padding: 10px 12px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
+    margin-bottom: 12px; font-size: 14px;
+  }
+  .login-card button {
+    width: 100%; padding: 10px; border: 0; border-radius: 8px;
+    background: var(--accent); color: #052e16; font-weight: 600; cursor: pointer;
+  }
+  #login-error { color: var(--danger); font-size: 13px; margin-top: 8px; min-height: 18px; }
+
+  /* ---------- Header ---------- */
+  header {
+    display: flex; align-items: center; gap: 16px;
+    padding: 10px 20px; background: var(--panel);
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 { font-size: 16px; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  #tabs { display: flex; gap: 6px; margin-left: auto; }
+  #tabs button {
+    background: transparent; border: 1px solid var(--border); color: var(--muted);
+    padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 13px;
+  }
+  #tabs button.active { background: var(--accent); border-color: var(--accent); color: #052e16; font-weight: 600; }
+  #btn-logout {
+    border: 1px solid var(--border); background: transparent; color: var(--muted);
+    padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 13px;
+  }
+  #btn-logout:hover { color: var(--danger); border-color: var(--danger); }
+
+  /* ---------- Layout de conversaciones ---------- */
+  main { flex: 1; display: flex; min-height: 0; }
+  .panel { display: none; flex: 1; min-width: 0; }
+  .panel.active { display: flex; }
+  .conv-layout { display: flex; flex: 1; min-height: 0; }
+  #conv-list {
+    width: 300px; min-width: 260px; border-right: 1px solid var(--border);
+    overflow-y: auto; background: var(--panel);
+  }
+  .conv-item { padding: 12px 14px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .conv-item:hover { background: var(--panel-2); }
+  .conv-item.active { background: var(--panel-2); border-left: 3px solid var(--accent); }
+  .conv-item .phone { font-weight: 600; font-size: 14px; display: flex; justify-content: space-between; }
+  .conv-item .time { color: var(--muted); font-size: 11px; font-weight: 400; }
+  .conv-item .last { color: var(--muted); font-size: 13px; margin-top: 3px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .conv-item .last.bot { color: var(--accent); }
+  .empty { color: var(--muted); text-align: center; padding: 30px; font-size: 14px; }
+
+  /* ---------- Hilo ---------- */
+  #thread-pane { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #thread-header {
+    padding: 12px 20px; border-bottom: 1px solid var(--border); font-size: 14px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  #thread-header .phone { font-weight: 600; }
+  #thread-header .hint { color: var(--muted); font-size: 12px; }
+  #thread {
+    flex: 1; overflow-y: auto; padding: 20px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .bubble { max-width: 65%; padding: 9px 12px; border-radius: 12px; font-size: 14px;
+    white-space: pre-wrap; word-break: break-word; line-height: 1.4; }
+  .bubble .meta { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .bubble.client { align-self: flex-start; background: var(--client); border-bottom-left-radius: 2px; }
+  .bubble.bot { align-self: flex-end; background: var(--bot); border-bottom-right-radius: 2px; }
+  /* // [ByCodex] (BRIEF-011) Fallos y resultados inciertos diferenciados de aceptación. */
+  .bubble.failed { background: #4c1d24; border: 1px solid #ef4444; }
+  .bubble.pending { border: 1px solid #fbbf24; }
+  .bubble .delivery { margin-top: 5px; font-size: 11px; }
+  #reply-row { display: flex; gap: 8px; padding: 12px 20px;
+    border-top: 1px solid var(--border); background: var(--panel); }
+  #reply-input {
+    flex: 1; padding: 10px 12px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
+  }
+  #reply-send {
+    padding: 10px 18px; border: 0; border-radius: 8px;
+    background: var(--accent); color: #052e16; font-weight: 600; cursor: pointer;
+  }
+  #reply-send:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* --------------------------------------------------
+     [ByOpenCode] (Reasignado) Tarjeta "Resumen para Atención"
+     - Tarjeta fijada arriba del hilo del chat (no se va al hacer scroll).
+     - Solo se muestra cuando el cliente está en PAUSED_HUMAN.
+     - Muestra Origen (anuncio/orgánico), Modelo e Interés + botón reanudar.
+     -------------------------------------------------- */
+  #handoff-card {
+    display: none;                 /* oculta por defecto hasta que haya resumen */
+    margin: 10px 20px 0 20px;
+    padding: 12px 14px;
+    border: 1px solid var(--accent);
+    border-left: 4px solid var(--accent);
+    border-radius: 10px;
+    background: linear-gradient(180deg, #16351f, var(--panel));
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .35);
+    position: sticky;              /* se mantiene visible aunque el hilo scrollee */
+    top: 10px;
+    z-index: 5;
+  }
+  #handoff-card.show { display: block; }
+  #handoff-card .ho-title {
+    font-size: 13px; font-weight: 700; margin-bottom: 8px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  #handoff-card .ho-pill {
+    background: #14532d; color: var(--accent); font-size: 11px;
+    font-weight: 600; padding: 2px 8px; border-radius: 10px;
+    border: 1px solid var(--accent);
+  }
+  #handoff-card .ho-grid { display: flex; gap: 12px; flex-wrap: wrap; }
+  #handoff-card .ho-field { flex: 1 1 30%; min-width: 150px; }
+  #handoff-card .ho-label {
+    font-size: 11px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .4px;
+  }
+  #handoff-card .ho-value { font-size: 13px; margin-top: 2px; }
+  #handoff-card .ho-value.muted { color: var(--muted); }
+  #handoff-card .ho-tag {
+    display: inline-block; background: var(--panel-2);
+    border: 1px solid var(--border); padding: 1px 8px; border-radius: 8px;
+    margin: 2px 4px 2px 0; font-size: 12px;
+  }
+  #handoff-card .ho-origen-anuncio { color: #fbbf24; font-weight: 600; }
+  #handoff-card .ho-origen-organico { color: #7dd3fc; font-weight: 600; }
+  #handoff-card .ho-actions { margin-top: 10px; display: flex; gap: 8px; align-items: center; }
+  #handoff-card .ho-btn {
+    border: 1px solid var(--accent); background: var(--accent); color: #052e16;
+    font-weight: 600; padding: 5px 12px; border-radius: 8px;
+    cursor: pointer; font-size: 12px;
+  }
+  #handoff-card .ho-btn:hover { background: #16a34a; }
+  #handoff-card .ho-btn.secondary { background: transparent; color: var(--muted); border-color: var(--border); }
+
+  /* ---------- Tablas ---------- */
+  .table-panel { overflow-y: auto; padding: 20px; flex: 1; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--bg); }
+  td .ok { color: var(--accent); }
+  td .no { color: var(--danger); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+  .badge.on { background: #14532d; color: var(--accent); }
+  .badge.off { background: #7f1d1d; color: #fca5a5; }
+  .mono { font-family: Consolas, monospace; font-size: 12px; }
+
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+</style>
+</head>
+<body>
+
+  <!-- ============ LOGIN ============ -->
+  <div id="login-overlay" class="show">
+    <form class="login-card" id="login-form">
+      <h1>🔐 Panel de Cecilia Tedin</h1>
+      <p>Ingresa la contraseña del dashboard</p>
+      <input type="password" id="login-pass" placeholder="Contraseña" autocomplete="current-password" required/>
+      <button type="submit">Entrar</button>
+      <div id="login-error"></div>
+    </form>
+  </div>
+
+  <!-- ============ APP ============ -->
+  <header id="app-header" style="display:none;">
+    <div>
+      <h1>🧵 Cecilia Tedin Bot</h1>
+      <div class="sub" id="conn-status">conexión: —</div>
+    </div>
+    <div id="tabs">
+      <button data-tab="conversaciones" class="active">Conversaciones</button>
+      <button data-tab="catalogo">Catálogo</button>
+      <button data-tab="productos">Productos</button>
+    </div>
+    <button id="btn-logout">Salir</button>
+  </header>
+
+  <main id="app-main" style="display:none;">
+
+    <!-- Conversaciones -->
+    <section id="tab-conversaciones" class="panel active">
+      <div class="conv-layout">
+        <aside id="conv-list"></aside>
+        <div id="thread-pane">
+          <div id="thread-header">
+            <span class="hint" id="thread-empty-hint">Selecciona una conversación para verla y responderle</span>
+          </div>
+          <!-- [ByOpenCode] (Reasignado) Tarjeta fijada de "Resumen para Atención".
+               Se llena dinámicamente con JS y SOLO se muestra si el cliente está
+               en PAUSED_HUMAN (Origen, Modelo e Interés para la asesora). -->
+          <div id="handoff-card"></div>
+          <div id="thread"></div>
+          <div id="reply-row">
+            <input id="reply-input" placeholder="Escribe tu respuesta y presiona Enter…" disabled/>
+            <button id="reply-send" disabled>Enviar</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Catálogo (clientes) -->
+    <section id="tab-catalogo" class="panel">
+      <div class="table-panel">
+        <table>
+          <thead><tr><th>Teléfono</th><th>Catálogo</th><th>Fecha de envío</th><th>Actualizado</th></tr></thead>
+          <tbody id="catalog-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Productos -->
+    <section id="tab-productos" class="panel">
+      <div class="table-panel">
+        <table>
+          <thead><tr><th>Producto</th><th>Precio</th><th>Categoría</th><th>Estado</th><th>Variantes (talla / color / stock)</th></tr></thead>
+          <tbody id="products-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+<script>
+"use strict";
+
+/* ---------- Utilidades ---------- */
+const $  = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? "" : s)
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
+function fmtDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    ...opts
+  });
+
+  if (res.status === 401) { showLogin(); throw new Error("no autorizado"); }
+  if (res.status === 403) { showLogin(); throw new Error("dashboard deshabilitado"); }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+/* ---------- Estado ---------- */
+// [ByCodex] (BRIEF-014) Selección única y generaciones independientes de selección/carga.
+let activeConversationPhone = null;
+let activeSelectionToken = 0;
+let activeLoadToken = 0;
+let conversationReady = false;
+const sendingPhones = new Set();
+let sse = null;
+
+// [ByCodex] (BRIEF-014) Enter y click comparten el mismo bloqueo de carga/envío.
+function updateReplyControls() {
+  const disabled = !activeConversationPhone || !conversationReady ||
+    sendingPhones.has(activeConversationPhone);
+  $("reply-input").disabled = disabled;
+  $("reply-send").disabled = disabled;
+}
+
+/* ---------- Login / Logout ---------- */
+// [ByCodex] (BRIEF-014) Invalidar cargas pendientes al cerrar o perder la sesión.
+function showLogin() {
+  activeConversationPhone = null;
+  activeSelectionToken++;
+  activeLoadToken++;
+  conversationReady = false;
+  $("reply-input").value = "";
+  $("thread").innerHTML = "";
+  $("handoff-card").innerHTML = "";
+  $("handoff-card").classList.remove("show");
+  updateReplyControls();
+  $("login-overlay").classList.add("show");
+  $("app-header").style.display = "none";
+  $("app-main").style.display = "none";
+  closeSSE();
+}
+
+function showApp() {
+  $("login-overlay").classList.remove("show");
+  $("app-header").style.display = "flex";
+  $("app-main").style.display = "flex";
+  $("login-error").textContent = "";
+  setStatus("conectando");
+  startSSE();
+  loadConversations();
+}
+
+$("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const password = $("login-pass").value;
+  try {
+    await api("/dashboard/login", {
+      method: "POST",
+      body: JSON.stringify({ password })
+    });
+    $("login-pass").value = "";
+    showApp();
+  } catch (err) {
+    $("login-error").textContent = err.message || "Error de conexión";
+  }
+});
+
+$("btn-logout").addEventListener("click", async () => {
+  await fetch("/dashboard/logout", { method: "POST", credentials: "same-origin" }).catch(() => {});
+  showLogin();
+});
+
+/* ---------- SS E tiempo real ---------- */
+function setStatus(txt) {
+  $("conn-status").textContent = "conexión: " + txt;
+}
+
+function startSSE() {
+  closeSSE();
+  sse = new EventSource("/dashboard/api/events");
+
+  sse.onopen = () => setStatus("en vivo ✓");
+  sse.onerror = () => setStatus("reconectando…");
+  sse.onmessage = (ev) => {
+    try {
+      const { data } = JSON.parse(ev.data);
+      if (data.telefono) {
+        loadConversations();
+        // [ByCodex] (BRIEF-014) Los refrescos SSE usan la misma carga protegida.
+        if (activeConversationPhone === data.telefono) loadThread(activeConversationPhone);
+      }
+    } catch {}
+  };
+}
+
+function closeSSE() {
+  if (sse) { sse.close(); sse = null; }
+}
+
+/* ---------- Conversaciones ---------- */
+async function loadConversations() {
+  try {
+    const list = await api("/dashboard/api/conversations");
+    renderConversations(list);
+  } catch (err) { /* si es 401 ya se mostró login */ }
+}
+
+function renderConversations(list) {
+  const box = $("conv-list");
+  box.innerHTML = "";
+
+  if (!list || list.length === 0) {
+    box.innerHTML = '<div class="empty">Aún no hay mensajes.<br/>Los nuevos aparecerán aquí en tiempo real.</div>';
+    return;
+  }
+
+  for (const c of list) {
+    const el = document.createElement("div");
+    // [ByCodex] (BRIEF-014) Lista y panel comparten el mismo destinatario.
+    el.dataset.phone = c.telefono;
+    el.className = "conv-item" + (c.telefono === activeConversationPhone ? " active" : "");
+    // [ByCodex] (BRIEF-011) No presentar el último intento fallido como respuesta enviada.
+    const deliveryPrefix = c.ultimo_estado_envio === "fallido" ? "⚠️ Fallido: " :
+      c.ultimo_estado_envio === "pendiente" ? "⏳ Por confirmar: " :
+      c.ultimo_origen === "bot" ? "🤖 " : "";
+    el.innerHTML =
+      '<div class="phone"><span>' + esc(c.telefono) + '</span>' +
+      '<span class="time">' + fmtDate(c.ultima_fecha) + '</span></div>' +
+      '<div class="last ' + (c.ultimo_origen === "bot" ? "bot" : "") + '">' +
+      deliveryPrefix + esc(c.ultimo_contenido || "…") +
+      ' · ' + c.total + ' msgs</div>';
+
+    el.addEventListener("click", () => selectConversation(c.telefono));
+    box.appendChild(el);
+  }
+}
+
+// [ByCodex] (BRIEF-014) Limpiar borrador y datos anteriores antes de cargar otro cliente.
+async function selectConversation(phone) {
+  activeConversationPhone = phone;
+  activeSelectionToken++;
+  conversationReady = false;
+  document.querySelectorAll(".conv-item").forEach(el =>
+    el.classList.toggle("active", el.dataset.phone === phone));
+  $("reply-input").value = "";
+  $("thread").innerHTML = "";
+  $("handoff-card").innerHTML = "";
+  $("handoff-card").classList.remove("show");
+  $("thread-header").innerHTML = '<span class="phone">' + esc(phone) +
+    '</span><span class="hint">Cargando conversación…</span>';
+  updateReplyControls();
+  await loadThread(phone);
+}
+
+// [ByCodex] (BRIEF-014) Hilo y resumen se publican juntos; nunca se pinta una carga obsoleta.
+async function loadThread(phone) {
+  if (!phone || phone !== activeConversationPhone) return;
+  const token = ++activeLoadToken;
+  const isCurrent = () => token === activeLoadToken && phone === activeConversationPhone;
+  conversationReady = false;
+  updateReplyControls();
+  try {
+    const [msgs, summary] = await Promise.all([
+      api("/dashboard/api/conversation/" + encodeURIComponent(phone)),
+      loadHandoff(phone)
+    ]);
+    if (!isCurrent()) return;
+    if (!Array.isArray(msgs) || msgs.some(m => m.telefono !== phone) ||
+        !summary || summary.telefono !== phone) {
+      throw new Error("La conversación recibida no corresponde al cliente seleccionado.");
+    }
+
+    $("thread-header").innerHTML =
+      '<span class="phone">' + esc(phone) + '</span>' +
+      '<span class="hint">respondes como el bot</span>';
+
+    const box = $("thread");
+    box.innerHTML = "";
+
+    for (const m of msgs) {
+      const b = document.createElement("div");
+      b.className = "bubble " + (m.origen === "bot" ? "bot" : "client");
+      // [ByCodex] (BRIEF-011) Aceptado no equivale a entregado; NULL histórico no se inventa.
+      let delivery = "";
+      if (m.origen === "bot") {
+        if (m.estado_envio === "fallido") {
+          b.className += " failed";
+          delivery = "⚠️ Fallido: WhatsApp rechazó el envío";
+        } else if (m.estado_envio === "pendiente") {
+          b.className += " pending";
+          delivery = "⏳ Resultado por confirmar. Verifica antes de reenviar";
+        } else if (m.estado_envio === "enviado") {
+          delivery = "✓ Aceptado por WhatsApp · entrega sin confirmar";
+        } else {
+          delivery = "Sin estado de envío registrado";
+        }
+      }
+      b.innerHTML = esc(m.contenido || "…") +
+        '<div class="meta">' + fmtDate(m.created_at) + "</div>" +
+        (delivery ? '<div class="delivery">' + esc(delivery) + '</div>' : "");
+      box.appendChild(b);
+    }
+
+    box.scrollTop = box.scrollHeight;
+
+    // [ByOpenCode] (Reasignado) Al abrir el chat cargamos también el resumen
+    // de atención (Origen/Modelo/Interés). Si el cliente está en PAUSED_HUMAN
+    // se muestra la tarjeta fijada; si no, se oculta.
+    // [ByCodex] (BRIEF-014) Render síncrono tras validar ambos resultados.
+    renderHandoff(summary);
+    conversationReady = true;
+  } catch (err) {
+    if (!isCurrent()) return;
+    $("thread").innerHTML = '<div class="empty">No se pudo cargar la conversación. Selecciónala nuevamente para reintentar.</div>';
+    $("handoff-card").classList.remove("show");
+    $("handoff-card").innerHTML = "";
+    $("thread-header").innerHTML = '<span class="phone">' + esc(phone) +
+      '</span><span class="hint">Carga incompleta</span>';
+  } finally {
+    if (isCurrent()) updateReplyControls();
+  }
+}
+
+/* --------------------------------------------------
+   [ByOpenCode] (Reasignado) Tarjeta "Resumen para Atención"
+   - Pide al backend el resumen del cliente (GET handoff-summary).
+   - Solo pinta la tarjeta cuando el cliente está en PAUSED_HUMAN.
+   - Muestra tres campos: Origen, Modelo e Interés, + botón "Reanudar bot".
+   -------------------------------------------------- */
+// [ByCodex] (BRIEF-014) Obtener datos sin escribir el DOM fuera de la carga coordinada.
+async function loadHandoff(phone) {
+  return api("/dashboard/api/conversation/" + encodeURIComponent(phone) + "/handoff-summary");
+}
+
+// [ByCodex] (BRIEF-014) Defensa adicional ante resúmenes de otro cliente.
+function renderHandoff(s) {
+  if (s && s.telefono !== activeConversationPhone) return;
+  const card = $("handoff-card");
+
+  // Solo se muestra la tarjeta cuando el bot está en pausa (PAUSED_HUMAN).
+  if (!s || !s.es_pausa_humana) {
+    card.classList.remove("show");
+    card.innerHTML = "";
+    return;
+  }
+
+  // ORIGEN: anuncio (con su source_type) o orgánico.
+  const origenHtml = s.origen && s.origen.tipo === "anuncio"
+    ? '<span class="ho-origen-anuncio">📣 Anuncio</span>' +
+      (s.origen.source_type
+        ? ' <small class="muted">(' + esc(s.origen.source_type) + ')</small>'
+        : "")
+    : '<span class="ho-origen-organico">🌱 Orgánico</span>';
+
+  // MODELOS: chips con cada modelo que mencionó el cliente.
+  const modelosHtml = (s.modelos && s.modelos.length)
+    ? s.modelos.map(m => "<span class='ho-tag'>" + esc(m) + "</span>").join("")
+    : '<span class="ho-value muted">—</span>';
+
+  // INTERÉS: última opción del menú o último texto del cliente.
+  const interesHtml = s.interes
+    ? "<span class='ho-tag'>" + esc(s.interes) + "</span>"
+    : '<span class="ho-value muted">—</span>';
+
+  // [ByCodex] (BRIEF-016) Integración de BRIEF-017: mostrar el cuarto campo ya expuesto por la API.
+  const necesidadHtml = esc(s.necesidad || "Por confirmar");
+
+  card.innerHTML =
+    '<div class="ho-title">🎯 Resumen para Atención' +
+      ' <span class="ho-pill">BOT EN PAUSA</span></div>' +
+    '<div class="ho-grid">' +
+      '<div class="ho-field"><div class="ho-label">Origen</div><div class="ho-value">' + origenHtml + '</div></div>' +
+      '<div class="ho-field"><div class="ho-label">Modelo</div><div class="ho-value">' + modelosHtml + '</div></div>' +
+      '<div class="ho-field"><div class="ho-label">Interés</div><div class="ho-value">' + interesHtml + '</div></div>' +
+      // [ByCodex] (BRIEF-016) Necesidad visible y escapada como el resto de los datos del cliente.
+      '<div class="ho-field"><div class="ho-label">Necesidad</div><div class="ho-value">' + necesidadHtml + '</div></div>' +
+    '</div>' +
+    '<div class="ho-actions">' +
+      '<button class="ho-btn" id="ho-resume" data-phone="' + esc(s.telefono) + '">▶ Reanudar bot</button>' +
+      '<span class="ho-value muted">El bot no le responde. Este chat está a cargo de una asesora.</span>' +
+    '</div>';
+
+  card.classList.add("show");
+
+  // [ByOpenCode] (Reasignado) Listener del botón "Reanudar bot".
+  $("ho-resume").addEventListener("click", () => resumeBot(s.telefono));
+}
+
+// [ByOpenCode] (Reasignado) Manda al backend para que el bot vuelva a
+// responderle al cliente (POST .../resume). Recarga conversaciones y la
+// tarjeta (desaparece porque el cliente deja de estar en PAUSED_HUMAN).
+// [ByCodex] (BRIEF-014) Una reanudación tardía no refresca ni alerta sobre otro chat.
+async function resumeBot(phone) {
+  if (phone !== activeConversationPhone || !conversationReady) return;
+  const selection = activeSelectionToken;
+  try {
+    await api(
+      "/dashboard/api/conversation/" + encodeURIComponent(phone) + "/resume",
+      { method: "POST", body: JSON.stringify({}) }
+    );
+    loadConversations();
+    if (selection === activeSelectionToken && phone === activeConversationPhone) {
+      await loadThread(phone);
+    }
+  } catch (err) {
+    if (selection === activeSelectionToken && phone === activeConversationPhone) {
+      alert("No se pudo reanudar el bot: " + (err.message || err));
+    }
+  }
+}
+
+/* ---------- Responder ---------- */
+// [ByCodex] (BRIEF-014) Capturar destinatario al click y proteger borradores de otros chats.
+async function sendReply() {
+  const input = $("reply-input");
+  const text = input.value.trim();
+  const targetPhone = activeConversationPhone;
+  const selection = activeSelectionToken;
+  const isSelected = () => targetPhone === activeConversationPhone && selection === activeSelectionToken;
+  if (!text || !targetPhone || !conversationReady || sendingPhones.has(targetPhone)) return;
+
+  sendingPhones.add(targetPhone);
+  updateReplyControls();
+  try {
+    await api("/dashboard/api/conversation/" + encodeURIComponent(targetPhone) + "/reply", {
+      method: "POST",
+      body: JSON.stringify({ text })
+    });
+    if (isSelected()) {
+      if (input.value.trim() === text) input.value = "";
+      await loadThread(targetPhone);
+    }
+    loadConversations();
+  } catch (err) {
+    // [ByCodex] (BRIEF-011) Refrescar el intento fallido manteniendo el borrador del mismo chat.
+    if (isSelected()) {
+      alert("No se pudo enviar: " + (err.message || err));
+      await loadThread(targetPhone);
+    }
+  } finally {
+    sendingPhones.delete(targetPhone);
+    if (targetPhone === activeConversationPhone) updateReplyControls();
+  }
+}
+
+$("reply-send").addEventListener("click", sendReply);
+$("reply-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") sendReply();
+});
+
+/* ---------- Tabs ---------- */
+document.querySelectorAll("#tabs button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#tabs button").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+    $("tab-" + btn.dataset.tab).classList.add("active");
+
+    if (btn.dataset.tab === "catalogo") loadCatalog();
+    if (btn.dataset.tab === "productos") loadProducts();
+  });
+});
+
+/* ---------- Catálogo (clientes) ---------- */
+async function loadCatalog() {
+  try {
+    const rows = await api("/dashboard/api/catalog");
+    $("catalog-body").innerHTML = rows.length
+      ? rows.map(r =>
+          "<tr>" +
+          "<td class='mono'>" + esc(r.telefono) + "</td>" +
+          "<td>" + (r.catalogo_enviado ? "<span class='badge on'>enviado</span>" : "<span class='badge off'>no enviado</span>") + "</td>" +
+          "<td>" + fmtDate(r.fecha_catalogo) + "</td>" +
+          "<td>" + fmtDate(r.updated_at) + "</td>" +
+          "</tr>"
+        ).join("")
+      : '<tr><td colspan="4">Sin clientes registrados.</td></tr>';
+  } catch {}
+}
+
+/* ---------- Productos ---------- */
+async function loadProducts() {
+  try {
+    const rows = await api("/dashboard/api/products");
+    $("products-body").innerHTML = rows.length
+      ? rows.map(p => {
+          const precio = p.precio && Number(p.precio) > 0 ? "Bs " + Number(p.precio).toFixed(2) : "por definir";
+          const variantes = (p.variaciones || []).filter(v => v.stock > 0).map(v => v.talla + " / " + v.color + " / " + v.stock).join("<br>") || "—";
+          const estado = p.disponible ? "<span class='badge on'>disponible</span>" : "<span class='badge off'>agotado</span>";
+          return "<tr>" +
+            "<td><strong>" + esc(p.nombre) + "</strong></td>" +
+            "<td>" + precio + "</td>" +
+            "<td>" + esc(p.categoria || "—") + "</td>" +
+            "<td>" + estado + "</td>" +
+            "<td>" + (variantes === "—" ? "—" : variantes) + "</td>" +
+            "</tr>";
+        }).join("")
+      : '<tr><td colspan="5">Sin productos cargados.</td></tr>';
+  } catch {}
+}
+
+/* ---------- Inicio ---------- */
+(async function init() {
+  try {
+    await api("/dashboard/api/me");
+    showApp();
+  } catch { /* ya se muestra login */ }
+})();
+
+setInterval(() => {
+  if (!$("app-main") || $("app-main").style.display === "none") return;
+  loadConversations();
+}, 5000);
+</script>
+</body>
+</html>

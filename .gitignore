@@ -1,4 +1,27 @@
+# dependencias
 node_modules/
+
+# secretos (nunca committear)
 .env
+.env.*
+!.env.example
+
+# datos y binarios locales
 data/
 media/
+
+# logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# editores / IDEs
+.vscode/
+.idea/
+
+# temporales
+*.tmp
+*.bak

@@ -2,6 +2,9 @@ require("dotenv").config();
 
 const axios = require("axios");
 
+// [ByOpenCode] (BRIEF-006) safeError: nunca loguear error.config (token).
+const { safeError } = require("./services/logger.service");
+
 async function subscribe() {
   try {
     const url =
@@ -21,9 +24,10 @@ async function subscribe() {
     console.log("Resultado:", response.data);
 
   } catch (error) {
+    // [ByOpenCode] (BRIEF-006) CUIDADO → safeError.
     console.error(
       "ERROR:",
-      error.response?.data || error.message
+      safeError(error)
     );
   }
 }

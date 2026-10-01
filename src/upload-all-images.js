@@ -5,6 +5,9 @@ const fs = require("fs");
 const path = require("path");
 const FormData = require("form-data");
 
+// [ByOpenCode] (BRIEF-006) safeError: nunca loguear error.config (token).
+const { safeError } = require("./services/logger.service");
+
 const images = [
   { key: "IMAGE_MODELO_1", file: "modelo1-fixed.jpg" },
   { key: "IMAGE_MODELO_2", file: "modelo2-fixed.jpg" },
@@ -91,10 +94,10 @@ async function main() {
 
   } catch (error) {
 
+    // [ByOpenCode] (BRIEF-006) CUIDADO → safeError.
     console.error(
       "ERROR:",
-      error.response?.data ||
-      error.message
+      safeError(error)
     );
   }
 }

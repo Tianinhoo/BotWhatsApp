@@ -1,165 +1,114 @@
 require("dotenv").config();
 
+const crypto = require("crypto");
 const express = require("express");
 
+// [ByClaude] Piloto V1 (árbol conversacional de 7 rutas, SIN IA generativa).
+// El servicio state.service.js concentra TODO el motor conversacional:
+//   - Registro de tráfico (anuncio / orgánico)  [ByOpenCode].
+//   - Estado del cliente + procesamiento de las 7 opciones del menú [ByClaude].
+// [ByClaude] (BRIEF-019) La V0 tenía un agente generativo; se eliminó en el glowdown.
 const {
-  sendTextMessage,
-  sendImageMessage
-} = require("./services/whatsapp.service");
+  // Tráfico
+  registerTraffic,
+  // Estado conversacional
+  STATES,
+  getUserState,
+  // Parseo
+  extractSelection,
+  resolveMenuOption,
+  requestedMenu,
+  // Árbol V1
+  processMenuOption,
+  greetAndShowMenu,
+  showMenu
+} = require("./services/state.service");
 
-const {
-  hasReceivedCatalog,
-  markCatalogSent
-} = require("./services/catalog-state.service");
+// [ByClaude] Persistencia de mensajes entrantes para que aparezcan en el
+// dashboard exactamente igual que antes (misma tabla "mensajes").
+const { saveMessage } = require("./services/messages.service");
+
+// [ByAntigravity] Para endpoint de health
+const pool = require("./services/db");
+
+// [ByCodex] (BRIEF-002: deduplicación persistente antes del árbol conversacional).
+const { tryClaimMessage } = require("./services/dedup.service");
+
+// [ByCodex] (BRIEF-026) Serializar antes de cualquier consulta por mensaje.
+const { processInOrder } = require("./services/queue.service");
+
+const dashboard = require("./routes/dashboard");
+
+// [ByOpenCode] (BRIEF-006) Helpers de logging redactado (PII/secrets).
+const { redactPhone, safeError } = require("./services/logger.service");
 
 
 const app = express();
 
-app.use(express.json());
+app.use(express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  }
+}));
+
+// ======================================================
+// [ByAntigravity] (endurecido) MIDDLEWARE DE VALIDACIÓN HMAC (Seguridad)
+// ======================================================
+// Validamos la firma X-Hub-Signature-256 de Meta para garantizar que
+// los requests del webhook provengan genuinamente de WhatsApp.
+
+// [ByAntigravity] (BRIEF-009) Modos aceptados de skip explícito.
+const SKIP_ENVS = new Set(["development", "test"]);
+
+// [ByAntigravity] (BRIEF-009) Warning al arrancar (una sola vez).
+if (!process.env.APP_SECRET) {
+  const env = process.env.NODE_ENV || "development";
+  if (SKIP_ENVS.has(env)) {
+    console.warn(`[HMAC] Modo ${env} sin APP_SECRET — validación desactivada.`);
+  }
+}
+
+function verifyMetaSignature(req, res, next) {
+  const env = process.env.NODE_ENV || "development";
+
+  // Skip explícito solo en dev/test.
+  if (!process.env.APP_SECRET && SKIP_ENVS.has(env)) {
+    return next();
+  }
+
+  // Sin APP_SECRET en cualquier otro entorno: rechazo del request.
+  if (!process.env.APP_SECRET) {
+    console.warn(`[HMAC] APP_SECRET faltante en NODE_ENV=${env} — rechazo.`);
+    return res.sendStatus(500);
+  }
+
+  const signature = req.headers["x-hub-signature-256"];
+  if (!signature) {
+    console.warn("❌ Falta firma X-Hub-Signature-256 en el webhook.");
+    return res.sendStatus(403);
+  }
+
+  const expectedHash = crypto
+    .createHmac("sha256", process.env.APP_SECRET)
+    .update(req.rawBody)
+    .digest("hex");
+
+  const expectedSignature = `sha256=${expectedHash}`;
+
+  // [ByAntigravity] (endurecido) Comparación timing-safe.
+  const sigBuf = Buffer.from(signature);
+  const expBuf = Buffer.from(expectedSignature);
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+    console.warn("❌ Firma HMAC del webhook inválida.");
+    return res.sendStatus(403);
+  }
+
+  next();
+}
+
+app.use(dashboard);
 
 const PORT = process.env.PORT || 3000;
-
-
-// ======================================================
-// CONFIGURACIÓN DEL CATÁLOGO
-// ======================================================
-
-const catalogKeywords = [
-  "catalogo",
-  "catálogo",
-  "ver catalogo",
-  "ver catálogo",
-  "modelos",
-  "ver modelos",
-  "ofertas",
-  "ver ofertas",
-  "promociones",
-  "ver promociones"
-];
-
-
-// Evita mandar dos catálogos al mismo tiempo
-// si el cliente envía varios mensajes muy rápido.
-const catalogInProgress = new Set();
-
-
-// ======================================================
-// FUNCIÓN: detectar solicitud de catálogo
-// ======================================================
-
-function requestedCatalog(text) {
-  if (!text) {
-    return false;
-  }
-
-  const normalizedText = text
-    .trim()
-    .toLowerCase();
-
-  return catalogKeywords.some(
-    keyword => normalizedText.includes(keyword)
-  );
-}
-
-
-// ======================================================
-// FUNCIÓN: enviar catálogo
-// ======================================================
-
-async function sendCatalog(phone, isFirstTime = false) {
-
-  if (catalogInProgress.has(phone)) {
-    console.log(
-      `Catálogo ya se está enviando a ${phone}.`
-    );
-
-    return;
-  }
-
-  catalogInProgress.add(phone);
-
-  try {
-
-    // Mensaje inicial
-    if (isFirstTime) {
-
-      await sendTextMessage(
-        phone,
-        "¡Hola! 👋 Gracias por escribir a Cecilia Tedin.\n\n" +
-        "A continuación te mostramos nuestros modelos y promociones disponibles 😊"
-      );
-
-    } else {
-
-      await sendTextMessage(
-        phone,
-        "¡Claro! 😊 Te mostramos nuevamente nuestros modelos y promociones."
-      );
-
-    }
-
-
-    // Modelo 1
-    await sendImageMessage(
-      phone,
-      process.env.IMAGE_MODELO_1,
-      "Modelo 1 ✨"
-    );
-
-
-    // Modelo 2
-    await sendImageMessage(
-      phone,
-      process.env.IMAGE_MODELO_2,
-      "Modelo 2 ✨"
-    );
-
-
-    // Modelo 3
-    await sendImageMessage(
-      phone,
-      process.env.IMAGE_MODELO_3,
-      "Modelo 3 ✨"
-    );
-
-
-    // Oferta del día
-    await sendImageMessage(
-      phone,
-      process.env.IMAGE_OFERTA_DIA,
-      "🔥 Oferta del día"
-    );
-
-
-    // Mensaje final
-    await sendTextMessage(
-      phone,
-      "Si alguno de nuestros modelos te interesa, " +
-      "escríbenos cuál y con gusto te ayudamos con " +
-      "colores, tallas y disponibilidad 😊"
-    );
-
-
-    // Guardamos que este cliente ya recibió el catálogo
-    await markCatalogSent(phone);
-
-    console.log(
-      `Catálogo enviado correctamente a ${phone} ✅`
-    );
-
-  } catch (error) {
-
-    console.error(
-      `Error enviando catálogo a ${phone}:`,
-      error.response?.data || error.message
-    );
-
-  } finally {
-
-    catalogInProgress.delete(phone);
-
-  }
-}
 
 
 // ======================================================
@@ -216,10 +165,41 @@ app.get("/webhook", (req, res) => {
 
 
 // ======================================================
+// [ByClaude] REGISTRAR EL MENSAJE ENTRANTE DEL CLIENTE
+// ======================================================
+// Helper interno: guarda en la tabla "mensajes" el mensaje que llegó del
+// cliente, sea texto o una selección interactiva. Antes vivía repetido
+// en dos ramas del webhook (agente / fallback); ahora es único.
+async function saveIncomingMessage(phone, message, rawText) {
+
+  // Si el cliente tocó la lista interactiva, guardamos qué opción tocó
+  // (esto se ve mejor en el dashboard que "[interactive]").
+  if (message.interactive) {
+    const listTitle =
+      message.interactive.list_reply?.title ||
+      message.interactive.button_reply?.title;
+
+    const label = listTitle
+      ? `[Opción del menú: ${listTitle}]`
+      : "[Interacción con el menú]";
+
+    await saveMessage(phone, "cliente", label);
+    return;
+  }
+
+  await saveMessage(
+    phone,
+    "cliente",
+    rawText || `[${message.type}]`
+  );
+}
+
+
+// ======================================================
 // RECEPCIÓN DE MENSAJES DE WHATSAPP
 // ======================================================
 
-app.post("/webhook", async (req, res) => {
+app.post("/webhook", verifyMetaSignature, async (req, res) => {
 
   // Respondemos inmediatamente a Meta.
   // El procesamiento continúa después.
@@ -244,82 +224,140 @@ app.post("/webhook", async (req, res) => {
       return;
     }
 
-
+    // [ByCodex] (BRIEF-026) Encolar antes de dedup: una consulta lenta no
+    // reordena mensajes. La cola conserva el turno hasta terminar realmente.
     const phone = message.from;
-
-    const text =
-      message.text?.body
-        ?.trim()
-        ?.toLowerCase() || "";
-
-
-    console.log(
-      `Mensaje recibido de ${phone}: ${text || `[${message.type}]`}`
-    );
-
-
-    const alreadyReceivedCatalog =
-      await hasReceivedCatalog(phone);
+    await processInOrder(phone, async () => {
+      // [ByCodex] (BRIEF-002: solo el primer INSERT procesa este wamid).
+      // Se ejecuta antes de logs, tráfico, historial, estado o respuestas.
+      // Sin id conservamos el flujo anterior para simuladores locales.
+      if (message.id) {
+        const isNew = await tryClaimMessage(message.id, message.from);
+        if (!isNew) {
+          console.log(`[dedup] wamid ${message.id} ya procesado, ignoro.`);
+          return;
+        }
+      }
 
 
-    const wantsCatalog =
-      requestedCatalog(text);
+      const rawText =
+        message.text?.body?.trim() || "";
 
 
-    // ==================================================
-    // CLIENTE NUEVO
-    // ==================================================
-
-    if (!alreadyReceivedCatalog) {
-
+      // [ByOpenCode] (BRIEF-006) REDACT: teléfono a últimos 4 dígitos; DROP:
+      // el contenido del mensaje (puede traer PII de terceros). Solo se deja
+      // el tipo de mensaje para entender el tráfico en Railway logs.
       console.log(
-        `Cliente nuevo: ${phone}`
+        `[ByOpenCode] Mensaje recibido de ${redactPhone(phone)} (type=${message.type})`
       );
 
-      await sendCatalog(
-        phone,
-        true
-      );
 
-      return;
-    }
+      // ==================================================
+      // [ByOpenCode] PILOTO V1 — ORIGEN DEL TRÁFICO
+      // ==================================================
+      // Extraemos el objeto "referral" del webhook:
+      //   - Si viene un "referral" (Click-to-WhatsApp de un anuncio de Meta),
+      //     el cliente llegó desde un ANUNCIO y se registra como tal.
+      //   - Si NO hay "referral", el mensaje es tráfico ORGÁNICO.
+      //
+      // La información se envía a state.service.js, que la persiste en la
+      // tabla "trafico_clientes". Se hace SIEMPRE, justo después de recibir
+      // el mensaje.
+      const referral =
+        message.referral ||
+        value?.contacts?.[0]?.referral ||
+        null;
+
+      const origenTrafico =
+        referral
+          ? "anuncio"
+          : "organico";
+
+      try {
+        await registerTraffic(phone, origenTrafico, referral);
+      } catch (error) {
+        // [ByOpenCode] Un fallo del registro nunca puede cortar la
+        // respuesta al cliente: logueamos y seguimos.
+        // [ByOpenCode] (BRIEF-006) REDACT teléfono + safeError.
+        console.error(
+          `[ByOpenCode] Error registrando tráfico de ${redactPhone(phone)}:`,
+          safeError(error)
+        );
+      }
 
 
-    // ==================================================
-    // CLIENTE PIDE EL CATÁLOGO DE NUEVO
-    // ==================================================
+      // ==================================================
+      // [ByClaude] PILOTO V1 — MOTOR CONVERSACIONAL (7 RUTAS)
+      // ==================================================
+      // [ByClaude] (BRIEF-019) Antes acá vivía un agente generativo. En V1 el bot ya no razona
+      // en lenguaje natural: solo enruta la selección del cliente al
+      // handler correspondiente del árbol de 7 opciones.
+      //
+      // Flujo:
+      //   1. Guardamos el mensaje entrante en "mensajes" (dashboard).
+      //   2. Leemos el estado actual del cliente.
+      //   3. Si está en PAUSED_HUMAN → no respondemos, humano se encarga.
+      //   4. Si está en ORGANIC y no eligió nada → saludo + menú.
+      //   5. Si eligió una opción válida (1..7 o id) → ejecutamos su ruta.
+      //   6. Si escribió texto libre → reenviamos el menú con un hint.
 
-    if (wantsCatalog) {
+      await saveIncomingMessage(phone, message, rawText);
 
-      console.log(
-        `Cliente ${phone} solicitó nuevamente el catálogo.`
-      );
+      const state = await getUserState(phone);
 
-      await sendCatalog(
-        phone,
-        false
-      );
+      // 3) Cliente pausado por un asesor humano: NO responder desde el bot.
+      // [ByOpenCode] (BRIEF-006) REDACT teléfono.
+      if (state === STATES.PAUSED_HUMAN) {
+        console.log(
+          `[ByClaude] Cliente ${redactPhone(phone)} está en PAUSED_HUMAN. Bot en silencio.`
+        );
+        return;
+      }
 
-      return;
-    }
+      // Extraemos la selección del cliente (interactivo o texto).
+      const rawSelection = extractSelection(message);
+      const option = resolveMenuOption(rawSelection);
 
+      // 5) Opción válida del árbol V1 (1..7): ejecutamos su ruta.
+      if (option) {
+        await processMenuOption(phone, rawSelection);
+        return;
+      }
 
-    // ==================================================
-    // MENSAJE NORMAL
-    // ==================================================
+      // 4) Cliente ORGANIC (primer contacto) sin opción válida → saludo + menú.
+      // [ByOpenCode] (BRIEF-006) REDACT teléfono.
+      if (state === STATES.ORGANIC) {
+        console.log(
+          `[ByClaude] Cliente nuevo (ORGANIC): ${redactPhone(phone)}. Envío saludo + menú.`
+        );
+        await greetAndShowMenu(phone);
+        return;
+      }
 
-    console.log(
-      `Cliente ${phone} ya recibió el catálogo. ` +
-      "El mensaje queda para atención humana."
-    );
+      // 6) El cliente ya está en MENU o CATALOG pero escribió texto libre.
+      // - Si pidió explícitamente volver al menú (palabra clave) → menú limpio.
+      // - Si escribió cualquier otra cosa → menú con un hint amable.
+      if (requestedMenu(rawText)) {
+        await showMenu(phone);
+        return;
+      }
 
+      await showMenu(phone, {
+        hint:
+          "Perdón, aún no puedo interpretar mensajes libres 🤖\n" +
+          "Elegí una de las opciones del menú para que te ayudemos 👇"
+      });
+
+    });
 
   } catch (error) {
 
+    // [ByOpenCode] (BRIEF-006) CUIDADO → safeError: descarta
+    // error.config (podría traer el Bearer token) y solo conserva
+    // message + body de la respuesta truncado.
     console.error(
       "Error procesando webhook:",
-      error.response?.data ||
-      error.message
+      safeError(error)
     );
 
   }
@@ -328,8 +366,42 @@ app.post("/webhook", async (req, res) => {
 
 
 // ======================================================
+// [ByAntigravity] BRIEF-004: Endpoint /health
+// ======================================================
+const startedAt = Date.now();
+
+app.get("/health", async (_req, res) => {
+  try {
+    const dbCheck = pool.query("SELECT 1");
+    const timeout = new Promise((_, r) =>
+      setTimeout(() => r(new Error("db_timeout")), 2000)
+    );
+    await Promise.race([dbCheck, timeout]);
+
+    return res.json({
+      ok: true,
+      db: "up",
+      uptime_s: Math.round((Date.now() - startedAt) / 1000)
+    });
+  } catch (err) {
+    return res.status(503).json({
+      ok: false,
+      db: "down",
+      error: err.message
+    });
+  }
+});
+
+// ======================================================
 // INICIAR SERVIDOR
 // ======================================================
+
+// [ByAntigravity] (endurecido) Fail-closed: sin APP_SECRET en prod no arranca.
+if (process.env.NODE_ENV === "production" && !process.env.APP_SECRET) {
+  throw new Error(
+    "APP_SECRET obligatorio en producción para validar webhooks de Meta."
+  );
+}
 
 app.listen(PORT, () => {
 

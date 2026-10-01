@@ -1,0 +1,1681 @@
+<title>Simulador Cecilia</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,700;1,9..144,500&family=Manrope:wght@400;500;600;700&display=swap">
+
+<style>
+/* Layout: 3-col dashboard — conversaciones | hilo | resumen — stacks below 1100px */
+:root {
+  --ground: #FBF8F2;
+  --surface: #FFFFFF;
+  --surface-alt: #F3EEE4;
+  --ink: #1F1A14;
+  --ink-soft: #574E42;
+  --ink-muted: #8E8577;
+  --rule: #E3DBCC;
+  --accent: #A02942;
+  --accent-soft: #F4DADF;
+  --accent-ink: #FFFFFF;
+  --indigo: #4A5890;
+  --indigo-soft: #E4E7F2;
+  --olive: #6B7A3E;
+  --olive-soft: #E8ECD9;
+  --mustard: #C58B1E;
+  --mustard-soft: #F6E6C3;
+  --ok: #2E7A4A;
+  --warn: #B35A1E;
+  --danger: #A02942;
+  --radius: 14px;
+  --radius-sm: 10px;
+  --shadow: 0 1px 2px rgba(31,26,20,0.04), 0 8px 24px rgba(31,26,20,0.06);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #16130F;
+    --surface: #211D18;
+    --surface-alt: #2A251F;
+    --ink: #F3EEE4;
+    --ink-soft: #BEB4A3;
+    --ink-muted: #847C6E;
+    --rule: #3A332B;
+    --accent: #D86682;
+    --accent-soft: #40212A;
+    --accent-ink: #16130F;
+    --indigo: #9BA7D4;
+    --indigo-soft: #2A2E42;
+    --olive: #B8C684;
+    --olive-soft: #2E321F;
+    --mustard: #E6B661;
+    --mustard-soft: #3A2E15;
+    --ok: #7FBF91;
+    --warn: #E59968;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 10px 28px rgba(0,0,0,0.35);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground: #16130F;
+  --surface: #211D18;
+  --surface-alt: #2A251F;
+  --ink: #F3EEE4;
+  --ink-soft: #BEB4A3;
+  --ink-muted: #847C6E;
+  --rule: #3A332B;
+  --accent: #D86682;
+  --accent-soft: #40212A;
+  --accent-ink: #16130F;
+  --indigo: #9BA7D4;
+  --indigo-soft: #2A2E42;
+  --olive: #B8C684;
+  --olive-soft: #2E321F;
+  --mustard: #E6B661;
+  --mustard-soft: #3A2E15;
+  --ok: #7FBF91;
+  --warn: #E59968;
+  --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 10px 28px rgba(0,0,0,0.35);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: 'Manrope', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding-inline: 16px;
+  padding-block: 16px;
+  max-width: 1480px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* ====================== HEADER ====================== */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 18px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.wordmark {
+  font-family: 'Fraunces', Georgia, serif;
+  font-weight: 500;
+  font-size: 24px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.sub {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+.sse {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  padding: 5px 10px;
+  background: var(--surface-alt);
+  border-radius: 999px;
+}
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--ok);
+  box-shadow: 0 0 0 0 var(--ok);
+  animation: pulse 2s infinite;
+}
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--ok) 60%, transparent); }
+  70% { box-shadow: 0 0 0 7px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.clock {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.spacer { flex: 1; }
+.topbar-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.chip-scenario {
+  background: var(--surface-alt);
+  border: 1px solid var(--rule);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.btn {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: none;
+  border-radius: 10px;
+  padding: 8px 14px;
+  font: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: transform 0.08s ease;
+}
+.btn:hover { transform: translateY(-1px); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn.ghost {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--rule);
+}
+.theme-toggle {
+  background: transparent;
+  border: 1px solid var(--rule);
+  color: var(--ink);
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+/* ====================== KPI STRIP ====================== */
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.kpi {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+}
+.kpi.highlight {
+  background: var(--accent-soft);
+  border-color: var(--accent-soft);
+}
+.kpi .label {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  font-weight: 700;
+}
+.kpi .val {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 24px;
+  font-weight: 500;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+.kpi.highlight .val { color: var(--accent); }
+
+/* ====================== MAIN GRID ====================== */
+.main {
+  display: grid;
+  grid-template-columns: 280px 1fr 340px;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ====================== SIDEBAR (conversaciones) ====================== */
+.sidebar {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.sidebar h2 {
+  font-family: 'Fraunces', Georgia, serif;
+  font-weight: 500;
+  font-size: 16px;
+  margin: 0 0 4px;
+  color: var(--ink);
+}
+.sidebar .hint {
+  font-size: 12px;
+  color: var(--ink-muted);
+  margin: 0;
+}
+.convo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+.convo {
+  display: grid;
+  grid-template-columns: 36px 1fr auto;
+  gap: 10px;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  align-items: center;
+  min-width: 0;
+}
+.convo:hover { background: var(--surface-alt); }
+.convo.active {
+  background: var(--surface-alt);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: var(--indigo-soft);
+  color: var(--indigo);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+}
+.avatar.organic { background: var(--surface-alt); color: var(--ink-soft); }
+.convo-info { min-width: 0; }
+.convo-name {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.convo-last {
+  font-size: 12px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.convo-meta {
+  font-size: 10px;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+}
+
+/* State chips (small) */
+.state-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  border-radius: 999px;
+}
+.state-chip::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: currentColor;
+}
+.state-ORGANIC { background: var(--surface-alt); color: var(--ink-soft); }
+.state-MENU { background: var(--indigo-soft); color: var(--indigo); }
+.state-CATALOG { background: var(--olive-soft); color: var(--olive); }
+.state-PAUSED_HUMAN {
+  background: var(--mustard-soft);
+  color: var(--mustard);
+  animation: pulse-chip 1.8s infinite;
+}
+@keyframes pulse-chip {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+/* ====================== THREAD (hilo) ====================== */
+.thread {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+.thread-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--rule);
+  flex-wrap: wrap;
+}
+.thread-head .avatar { width: 42px; height: 42px; font-size: 14px; }
+.thread-head .meta { min-width: 0; }
+.thread-head .meta-name {
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 18px;
+  color: var(--ink);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.thread-head .meta-phone {
+  font-size: 12px;
+  color: var(--ink-muted);
+  font-family: var(--mono);
+}
+
+.thread-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--ground);
+}
+.thread-messages::-webkit-scrollbar { width: 10px; }
+.thread-messages::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 10px; }
+
+/* Message bubbles */
+.bubble {
+  max-width: 72%;
+  padding: 9px 13px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.bubble.cliente {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  color: var(--ink);
+  align-self: flex-start;
+  border-top-left-radius: 4px;
+}
+.bubble.bot {
+  background: var(--accent-soft);
+  color: var(--ink);
+  align-self: flex-end;
+  border-top-right-radius: 4px;
+}
+.bubble.system {
+  background: transparent;
+  color: var(--ink-muted);
+  font-style: italic;
+  font-size: 12px;
+  align-self: center;
+  text-align: center;
+  max-width: 100%;
+}
+.bubble-time {
+  font-size: 10px;
+  color: var(--ink-muted);
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.bubble.bot .bubble-time { justify-content: flex-end; }
+.bubble.cliente .bubble-time { justify-content: flex-start; }
+.send-check { color: var(--ok); }
+
+/* "Image" placeholders in catalog */
+.img-placeholder {
+  width: 180px;
+  height: 220px;
+  background: linear-gradient(135deg, var(--accent-soft), var(--mustard-soft));
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Fraunces', Georgia, serif;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 500;
+  margin-top: 6px;
+}
+
+/* Typing indicator */
+.typing {
+  align-self: flex-end;
+  display: flex;
+  gap: 4px;
+  padding: 10px 14px;
+  background: var(--accent-soft);
+  border-radius: 14px;
+  border-top-right-radius: 4px;
+}
+.typing span {
+  width: 6px;
+  height: 6px;
+  background: var(--accent);
+  border-radius: 999px;
+  animation: typing 1.2s infinite;
+}
+.typing span:nth-child(2) { animation-delay: 0.15s; }
+.typing span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes typing {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.3; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
+/* Compose */
+.compose {
+  padding: 14px 18px;
+  border-top: 1px solid var(--rule);
+  background: var(--surface);
+}
+.compose-form {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+.compose textarea {
+  flex: 1;
+  border: 1px solid var(--rule);
+  background: var(--ground);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  resize: none;
+  min-height: 42px;
+  max-height: 120px;
+  min-width: 0;
+}
+.compose textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.compose-hint {
+  font-size: 11px;
+  color: var(--ink-muted);
+  margin-top: 6px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.compose-hint kbd {
+  background: var(--surface-alt);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.compose-quick {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.quick {
+  background: var(--surface-alt);
+  border: 1px solid var(--rule);
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.quick:hover { background: var(--accent-soft); }
+
+/* ====================== RESUMEN para Atención ====================== */
+.resumen {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  overflow-y: auto;
+}
+.resumen h2 {
+  font-family: 'Fraunces', Georgia, serif;
+  font-weight: 500;
+  font-size: 17px;
+  margin: 0;
+  color: var(--ink);
+}
+.resumen .state-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--surface-alt);
+  border-radius: var(--radius-sm);
+}
+.resumen .state-row .lbl {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  font-weight: 700;
+}
+.field {
+  padding: 10px 12px;
+  background: var(--surface-alt);
+  border-radius: var(--radius-sm);
+}
+.field .lbl {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.field .val {
+  font-size: 13px;
+  color: var(--ink);
+  font-weight: 500;
+}
+.field .val.pending {
+  color: var(--ink-muted);
+  font-style: italic;
+}
+.field .sub {
+  font-size: 11px;
+  color: var(--ink-muted);
+  margin-top: 3px;
+}
+.badge-ad {
+  display: inline-block;
+  background: var(--indigo-soft);
+  color: var(--indigo);
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  margin-left: 6px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.resumen .btn-handoff {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--accent);
+  padding: 10px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  margin-top: auto;
+}
+.resumen .btn-handoff:hover {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.resumen-foot {
+  font-size: 10px;
+  color: var(--ink-muted);
+  font-family: var(--mono);
+  padding-top: 8px;
+  border-top: 1px dashed var(--rule);
+}
+
+/* ====================== TRACE PANEL ====================== */
+.trace-panel {
+  margin-top: 14px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.trace-head {
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+  background: var(--surface);
+}
+.trace-head h3 {
+  margin: 0;
+  font-family: 'Fraunces', Georgia, serif;
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--ink);
+}
+.trace-head .chevron {
+  transition: transform 0.2s ease;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+.trace-panel[data-open="true"] .chevron { transform: rotate(180deg); }
+.trace-body {
+  display: none;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 10px 16px 14px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.55;
+  background: var(--ground);
+  border-top: 1px solid var(--rule);
+}
+.trace-panel[data-open="true"] .trace-body { display: block; }
+.trace-entry { color: var(--ink-soft); }
+.trace-entry .ts { color: var(--ink-muted); margin-right: 10px; }
+.trace-entry.sql { color: var(--indigo); }
+.trace-entry.state { color: var(--olive); font-weight: 600; }
+.trace-entry.warn { color: var(--warn); }
+.trace-entry.danger { color: var(--danger); font-weight: 600; }
+.trace-entry.ok { color: var(--ok); }
+
+/* ====================== TOAST ====================== */
+.toasts {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 100;
+  max-width: calc(100vw - 40px);
+}
+.toast {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+  border-radius: 10px;
+  padding: 10px 14px;
+  box-shadow: var(--shadow);
+  font-size: 13px;
+  color: var(--ink);
+  min-width: 240px;
+  max-width: 320px;
+  animation: toastIn 0.3s ease;
+}
+.toast .toast-title {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+@keyframes toastIn {
+  from { transform: translateX(20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* ====================== RESPONSIVE ====================== */
+@media (max-width: 1200px) {
+  .kpis { grid-template-columns: repeat(3, 1fr); }
+  .kpi:nth-child(4), .kpi:nth-child(5) { display: none; }
+}
+@media (max-width: 1100px) {
+  .main {
+    grid-template-columns: 1fr;
+  }
+  .sidebar { max-height: 240px; overflow-y: auto; }
+  .thread { min-height: 500px; }
+}
+@media (max-width: 640px) {
+  .wordmark { font-size: 20px; }
+  .kpis { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .kpi:nth-child(3) { display: none; }
+  .kpi .val { font-size: 20px; }
+  .bubble { max-width: 85%; }
+  .img-placeholder { width: 140px; height: 170px; }
+}
+</style>
+
+<div class="app">
+  <!-- =============== TOPBAR =============== -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="wordmark">Cecilia Tedin</span>
+      <span class="sub">Simulador V1</span>
+    </div>
+    <div class="sse" title="Esto es un prototipo visual: no hay conexión real con Meta ni con Postgres">
+      <span class="dot" style="background: var(--warn)"></span>
+      <span>Webhook SIMULADO</span>
+    </div>
+    <div class="clock" id="clock">00:00:00</div>
+    <div class="spacer"></div>
+    <div class="topbar-actions">
+      <select class="chip-scenario" id="scenario-select" aria-label="Escenario">
+        <option value="organic-new">Cliente orgánico nuevo</option>
+        <option value="ad-new">Nuevo desde anuncio</option>
+        <option value="returning-menu">Volver — estado MENU</option>
+        <option value="returning-catalog">Volver — estado CATALOG</option>
+      </select>
+      <button class="btn ghost" id="reset-btn">↻ Reiniciar</button>
+      <button class="theme-toggle" id="theme-toggle" aria-label="Cambiar tema">◐</button>
+    </div>
+  </header>
+
+  <!-- =============== DISCLAIMER =============== -->
+  <section style="background: var(--mustard-soft); border: 1px solid var(--mustard); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 14px; font-size: 12px; color: var(--ink); display: flex; gap: 10px; align-items: flex-start;">
+    <span style="font-weight: 700; color: var(--mustard);">⚠ PROTOTIPO</span>
+    <span>Esta página NO ejecuta el bot real. Reproduce en JavaScript la lógica del árbol V1 copiada de <code>src/services/state.service.js</code>. No hay conexión a Meta, no hay Postgres, no hay webhook. Ver <code>docs/simulaciones/CORRESPONDENCIA-CODIGO-REAL.md</code> para la auditoría de divergencias.</span>
+  </section>
+
+  <!-- =============== KPIs =============== -->
+  <section class="kpis" aria-label="Resumen del día">
+    <div class="kpi"><div class="label">Conversaciones hoy</div><div class="val" id="kpi-convos">1</div></div>
+    <div class="kpi highlight"><div class="label">Esperan asesora</div><div class="val" id="kpi-pending">0</div></div>
+    <div class="kpi"><div class="label">Mensajes procesados</div><div class="val" id="kpi-msgs">0</div></div>
+    <div class="kpi"><div class="label">Tráfico de anuncios</div><div class="val" id="kpi-ads">0%</div></div>
+    <div class="kpi"><div class="label">Uptime del bot</div><div class="val" id="kpi-uptime">00:00:00</div></div>
+  </section>
+
+  <!-- =============== MAIN =============== -->
+  <section class="main">
+    <!-- LEFT: Conversaciones -->
+    <aside class="sidebar">
+      <h2>Conversaciones</h2>
+      <p class="hint">Simulación activa. Escribí en el panel central como cliente para interactuar con el bot.</p>
+      <ul class="convo-list" id="convo-list"></ul>
+    </aside>
+
+    <!-- CENTER: Hilo -->
+    <section class="thread">
+      <header class="thread-head">
+        <div class="avatar" id="active-avatar">ML</div>
+        <div class="meta">
+          <div class="meta-name">
+            <span id="active-name">María López</span>
+            <span class="state-chip state-ORGANIC" id="active-chip">ORGANIC</span>
+          </div>
+          <div class="meta-phone" id="active-phone">+591 71234567 · Santa Cruz</div>
+        </div>
+      </header>
+
+      <div class="thread-messages" id="messages" aria-live="polite" aria-atomic="false"></div>
+
+      <div class="compose">
+        <form class="compose-form" id="compose-form">
+          <textarea
+            id="compose-input"
+            placeholder="Escribí como cliente — 'Hola', '1', 'catalogo', 'quiero el modelo 2 en talla M'..."
+            rows="1"
+            aria-label="Mensaje del cliente"
+          ></textarea>
+          <button type="submit" class="btn" id="send-btn">Enviar</button>
+        </form>
+        <div class="compose-hint">
+          <span><kbd>Enter</kbd> enviar</span>
+          <span><kbd>Shift</kbd>+<kbd>Enter</kbd> salto de línea</span>
+          <span>Lógica <strong>transcrita</strong> de <code>state.service.js</code> — ver <code>CORRESPONDENCIA-CODIGO-REAL.md</code> para divergencias conocidas</span>
+        </div>
+        <div class="compose-quick">
+          <button type="button" class="quick" data-send="Hola">Hola</button>
+          <button type="button" class="quick" data-send="1">1 · Catálogo</button>
+          <button type="button" class="quick" data-send="2">2 · Modelos nuevos</button>
+          <button type="button" class="quick" data-send="3">3 · Precios</button>
+          <button type="button" class="quick" data-send="4">4 · Stock</button>
+          <button type="button" class="quick" data-send="5">5 · Envíos</button>
+          <button type="button" class="quick" data-send="6">6 · Asesora</button>
+          <button type="button" class="quick" data-send="7">7 · Contacto</button>
+          <button type="button" class="quick" data-send="menú">menú</button>
+          <button type="button" class="quick" data-send="quiero el modelo 2 en talla M negro">texto libre</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT: Resumen para Atención -->
+    <aside class="resumen">
+      <h2>Resumen para Atención</h2>
+      <div class="state-row">
+        <span class="lbl">Estado actual</span>
+        <span class="state-chip state-ORGANIC" id="resumen-chip">ORGANIC</span>
+      </div>
+
+      <div class="field">
+        <div class="lbl">Origen del tráfico</div>
+        <div class="val pending" id="field-origen">A la espera del primer mensaje</div>
+      </div>
+
+      <div class="field">
+        <div class="lbl">Modelo seleccionado</div>
+        <div class="val pending" id="field-modelo">Por confirmar</div>
+      </div>
+
+      <div class="field">
+        <div class="lbl">Interés / Color</div>
+        <div class="val pending" id="field-interes">Por confirmar</div>
+      </div>
+
+      <div class="field">
+        <div class="lbl">Necesidad</div>
+        <div class="val pending" id="field-necesidad">Por confirmar</div>
+      </div>
+
+      <button class="btn-handoff" id="resume-bot-btn" hidden>↺ Reactivar bot para esta clienta</button>
+
+      <div class="resumen-foot" id="resumen-foot">resumen vacío — aún no se derivó</div>
+    </aside>
+  </section>
+
+  <!-- =============== TRACE =============== -->
+  <section class="trace-panel" id="trace-panel" data-open="false">
+    <header class="trace-head" id="trace-toggle">
+      <h3>▸ Trace SIMULADO — SQL que ejecutaría el bot real (no se ejecuta nada aquí)</h3>
+      <span class="chevron">▼</span>
+    </header>
+    <div class="trace-body" id="trace-body"></div>
+  </section>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script>
+/* ============================================================
+   CECILIA TEDIN BOT — Simulador V1 (browser-side FSM)
+   Transpila la lógica de state.service.js para correr en navegador.
+   Cualquier cambio en el árbol real debe reflejarse acá.
+   ============================================================ */
+
+const STATES = Object.freeze({
+  ORGANIC: 'ORGANIC',
+  MENU: 'MENU',
+  CATALOG: 'CATALOG',
+  PAUSED_HUMAN: 'PAUSED_HUMAN'
+});
+
+const MENU_OPTIONS = {
+  '1': { number: 1, id: 'catalogo', label: 'Ver catálogo completo' },
+  'catalogo': { number: 1, id: 'catalogo', label: 'Ver catálogo completo' },
+  'catálogo': { number: 1, id: 'catalogo', label: 'Ver catálogo completo' },
+  'ver catalogo completo': { number: 1, id: 'catalogo', label: 'Ver catálogo completo' },
+  'ver catálogo completo': { number: 1, id: 'catalogo', label: 'Ver catálogo completo' },
+  '2': { number: 2, id: 'modelos', label: 'Modelos nuevos' },
+  'modelos': { number: 2, id: 'modelos', label: 'Modelos nuevos' },
+  'modelos nuevos': { number: 2, id: 'modelos', label: 'Modelos nuevos' },
+  '3': { number: 3, id: 'precios_tallas', label: 'Precios y tallas' },
+  'precios_tallas': { number: 3, id: 'precios_tallas', label: 'Precios y tallas' },
+  'precios y tallas': { number: 3, id: 'precios_tallas', label: 'Precios y tallas' },
+  'precios': { number: 3, id: 'precios_tallas', label: 'Precios y tallas' },
+  'tallas': { number: 3, id: 'precios_tallas', label: 'Precios y tallas' },
+  '4': { number: 4, id: 'stock', label: 'Disponibilidad / stock' },
+  'stock': { number: 4, id: 'stock', label: 'Disponibilidad / stock' },
+  'disponibilidad': { number: 4, id: 'stock', label: 'Disponibilidad / stock' },
+  'disponibilidad / stock': { number: 4, id: 'stock', label: 'Disponibilidad / stock' },
+  '5': { number: 5, id: 'envios', label: 'Envíos y entregas' },
+  'envios': { number: 5, id: 'envios', label: 'Envíos y entregas' },
+  'envíos': { number: 5, id: 'envios', label: 'Envíos y entregas' },
+  'envios y entregas': { number: 5, id: 'envios', label: 'Envíos y entregas' },
+  'envíos y entregas': { number: 5, id: 'envios', label: 'Envíos y entregas' },
+  '6': { number: 6, id: 'asesor', label: 'Hablar con un asesor' },
+  'asesor': { number: 6, id: 'asesor', label: 'Hablar con un asesor' },
+  'hablar con un asesor': { number: 6, id: 'asesor', label: 'Hablar con un asesor' },
+  'humano': { number: 6, id: 'asesor', label: 'Hablar con un asesor' },
+  '7': { number: 7, id: 'contacto', label: 'Contacto y horarios' },
+  'contacto': { number: 7, id: 'contacto', label: 'Contacto y horarios' },
+  'contacto y horarios': { number: 7, id: 'contacto', label: 'Contacto y horarios' },
+  'horarios': { number: 7, id: 'contacto', label: 'Contacto y horarios' }
+};
+
+const MENU_REOPEN_KEYWORDS = [
+  'menu','menú','volver','inicio','opciones','hola','buenas',
+  'buenos dias','buenos días','buenas tardes','buenas noches'
+];
+
+/* Config del negocio — refleja fielmente src/config/business.js (BRIEF-012):
+   TODO en null hasta que el negocio confirme. El bot debe mostrar
+   "Por confirmar" en lugar de inventar datos. Si cambiás esto para una
+   demo, documentalo en CORRESPONDENCIA-CODIGO-REAL.md */
+const business = {
+  precios: { desde: null, hasta: null },
+  tallas: null,
+  horario_atencion: null,
+  instagram: null,
+  envios: { cobertura: null, plazo: null, pago_contra_entrega: null },
+  direccion_fisica: null
+};
+
+/* Estado global de la simulación (una conversación activa) */
+let session = null;
+
+/* Catálogo de escenarios */
+const SCENARIOS = {
+  'organic-new': {
+    nombre: 'María López', phone: '59171234567', ciudad: 'Santa Cruz',
+    initials: 'ML', avatarClass: 'organic', estado: STATES.ORGANIC,
+    origen: 'organico', referral: null, catalogo_enviado: false,
+    mensajes: []
+  },
+  'ad-new': {
+    nombre: 'Fabiana Mercado', phone: '59178899001', ciudad: 'Cochabamba',
+    initials: 'FM', avatarClass: '', estado: STATES.ORGANIC,
+    origen: 'anuncio',
+    referral: { source_type: 'ad', source_id: '239827', headline: 'Efecto Lipo · Viernes Express', source_url: 'fb.com/ad/239827' },
+    catalogo_enviado: false, mensajes: []
+  },
+  'returning-menu': {
+    nombre: 'Rocío Fernández', phone: '59172234455', ciudad: 'La Paz',
+    initials: 'RF', avatarClass: 'organic', estado: STATES.MENU,
+    origen: 'organico', referral: null, catalogo_enviado: false,
+    mensajes: [
+      { origen: 'cliente', texto: 'Hola', ts: nowMinus(5) },
+      { origen: 'bot', texto: '¡Hola! 👋 Somos *Cecilia Tedin*.\nElegí una opción del menú para que te ayudemos 😊', ts: nowMinus(5) },
+      { origen: 'bot', texto: '[Menú principal]', ts: nowMinus(5), isSystem: true }
+    ]
+  },
+  'returning-catalog': {
+    nombre: 'Ana Cruz', phone: '59177012340', ciudad: 'Santa Cruz',
+    initials: 'AC', avatarClass: '', estado: STATES.CATALOG,
+    origen: 'anuncio',
+    referral: { source_type: 'ad', source_id: '771221', headline: 'Oferta primavera · Modelo 3' },
+    catalogo_enviado: true,
+    mensajes: [
+      { origen: 'cliente', texto: '1', ts: nowMinus(10) },
+      { origen: 'bot', texto: '¡Hola! 👋 Gracias por escribirle a *Cecilia Tedin*.\n\nA continuación te mostramos nuestros modelos y promociones disponibles 😊', ts: nowMinus(10) },
+      { origen: 'bot', texto: '[Catálogo enviado]', ts: nowMinus(9), isSystem: true },
+      { origen: 'bot', texto: 'Si algún modelo te llamó la atención, escribí su nombre y te ayudamos con tallas, colores y precios 💖\n\nEscribí *menú* para volver al menú principal.', ts: nowMinus(9) }
+    ]
+  }
+};
+
+function nowMinus(mins) {
+  return new Date(Date.now() - mins * 60000);
+}
+
+/* ============================================================
+   LÓGICA DE LA FSM (espejo de state.service.js)
+   ============================================================ */
+
+function resolveMenuOption(raw) {
+  if (raw === undefined || raw === null) return null;
+  const key = String(raw).trim().toLowerCase();
+  if (!key) return null;
+  if (!Object.hasOwn(MENU_OPTIONS, key)) return null;
+  return MENU_OPTIONS[key];
+}
+
+function requestedMenu(raw) {
+  if (!raw) return false;
+  const key = String(raw).trim().toLowerCase();
+  return MENU_REOPEN_KEYWORDS.includes(key);
+}
+
+function registerTraffic() {
+  trace('sql', 'INSERT INTO trafico_clientes (telefono, origen, ...) ON CONFLICT (telefono) DO UPDATE SET origen = CASE WHEN excluded.origen = \'anuncio\' THEN \'anuncio\' ELSE trafico_clientes.origen END ... [BRIEF-013]');
+}
+
+async function processIncoming(text) {
+  if (!text) return;
+
+  // 1. Encolar mensaje del cliente en la UI
+  addMessage('cliente', text);
+  trace('info', `Mensaje recibido · phone=***${session.phone.slice(-4)} · type=text`);
+
+  // 2. Dedup wamid
+  const wamid = `wamid.${Math.random().toString(36).slice(2, 10)}`;
+  trace('sql', `INSERT INTO mensajes_procesados (wamid='${wamid}', telefono) ON CONFLICT DO NOTHING → claimed`);
+
+  // 3. Register traffic
+  registerTraffic();
+
+  // 4. Insert mensaje
+  trace('sql', 'INSERT INTO mensajes (telefono, origen=\'cliente\', contenido)');
+
+  // 5. Read state
+  trace('sql', `SELECT estado_conversacion FROM clientes_whatsapp WHERE telefono = $1 → ${session.estado}`);
+
+  if (session.estado === STATES.PAUSED_HUMAN) {
+    trace('warn', 'Estado = PAUSED_HUMAN → bot silencioso. Humano debe responder.');
+    showToast('Cliente en handoff', 'El bot no responde. Esperando asesora.');
+    return;
+  }
+
+  // 6. Resolve
+  const option = resolveMenuOption(text);
+
+  if (option) {
+    trace('state', `resolveMenuOption → opción ${option.number} (${option.id})`);
+    await processMenuOption(option);
+    return;
+  }
+
+  if (session.estado === STATES.ORGANIC) {
+    trace('state', 'ORGANIC + sin opción válida → greetAndShowMenu');
+    await greetAndShowMenu();
+    return;
+  }
+
+  if (requestedMenu(text)) {
+    trace('state', 'Palabra clave de reapertura → showMenu');
+    await showMenu();
+    return;
+  }
+
+  trace('warn', 'Texto libre no reconocido → showMenu con hint (riesgo de bucle)');
+  await showMenu('Perdón, aún no puedo interpretar mensajes libres 🤖\nElegí una de las opciones del menú para que te ayudemos 👇');
+}
+
+async function processMenuOption(option) {
+  switch (option.id) {
+    case 'catalogo': {
+      const isFirstTime = !session.catalogo_enviado;
+      await replyCatalog({ isFirstTime });
+      break;
+    }
+    case 'modelos': await replyNewModels(); break;
+    case 'precios_tallas': await replyPricesAndSizes(); break;
+    case 'stock': await replyStock(); break;
+    case 'envios': await replyShipping(); break;
+    case 'asesor': await replyDeriveToHuman(); break;
+    case 'contacto': await replyContact(); break;
+  }
+}
+
+async function replyCatalog({ isFirstTime }) {
+  trace('sql', `SELECT catalogo_enviado FROM clientes_whatsapp → ${session.catalogo_enviado}`);
+  const intro = isFirstTime
+    ? '¡Hola! 👋 Gracias por escribirle a *Cecilia Tedin*.\n\nA continuación te mostramos nuestros modelos y promociones disponibles 😊'
+    : '¡Claro! 😊 Te muestro de nuevo nuestros modelos y promociones.';
+  await botTypes();
+  addMessage('bot', intro);
+  trace('sql', 'INSERT INTO mensajes (bot, estado_envio=enviado) [BRIEF-011]');
+
+  await botPause(500);
+  for (const caption of ['Modelo 1 ✨','Modelo 2 ✨','Modelo 3 ✨','🔥 Oferta del día']) {
+    addImagePlaceholder(caption);
+    trace('sql', `INSERT INTO mensajes contenido='[Imagen: ${caption}]'`);
+    await botPause(240);
+  }
+  addMessage('bot system', '[Catálogo enviado]', true);
+
+  await botPause(300);
+  addMessage('bot', 'Si algún modelo te llamó la atención, escribí su nombre y te ayudamos con tallas, colores y precios 💖\n\nEscribí *menú* para volver al menú principal.');
+
+  session.catalogo_enviado = true;
+  trace('sql', 'UPDATE clientes_whatsapp SET catalogo_enviado = true, fecha_catalogo = now()');
+  setState(STATES.CATALOG);
+}
+
+async function replyNewModels() {
+  await botTypes();
+  addMessage('bot', '✨ *Modelos nuevos*\n\nEstas son las últimas prendas que llegaron a la tienda:');
+  await botPause(400);
+  for (const caption of ['Modelo 1 ✨','Modelo 2 ✨','Modelo 3 ✨','🔥 Oferta del día']) {
+    addImagePlaceholder(caption);
+    await botPause(220);
+  }
+  await botPause(260);
+  addMessage('bot', 'Si te interesa alguno, escribinos su nombre o número y te contamos tallas, colores y disponibilidad 💖\n\nEscribí *menú* para volver al menú principal.');
+  session.catalogo_enviado = true;
+  setState(STATES.CATALOG);
+}
+
+async function replyPricesAndSizes() {
+  const partes = ['📏 *Precios y tallas*',''];
+  if (business.precios?.desde && business.precios?.hasta) {
+    partes.push(`• Nuestros modelos van desde *${business.precios.desde}* hasta *${business.precios.hasta}*.`);
+  }
+  if (Array.isArray(business.tallas) && business.tallas.length) {
+    partes.push(`• Contamos con tallas *${business.tallas.join(', ')}* (según modelo).`);
+  }
+  if (partes.length === 2) partes.push('Nuestros precios y tallas dependen del modelo específico.');
+  partes.push('');
+  partes.push('Para ver precio y talla exactos de un modelo, tocá la *opción 6* del menú y te derivamos con una asesora que puede confirmártelos 💖');
+  partes.push('');
+  partes.push('Escribí *menú* para volver al menú principal.');
+
+  await botTypes();
+  addMessage('bot', partes.join('\n'));
+  setState(STATES.MENU);
+}
+
+async function replyStock() {
+  await botTypes();
+  addMessage('bot',
+    '🔎 *Disponibilidad / stock*\n\n' +
+    'Para consultar stock de un modelo específico en tu talla y color, tocá la *opción 6* del menú y una asesora te confirma en el momento ✨\n\n' +
+    'Escribí *menú* para volver al menú principal.'
+  );
+  setState(STATES.MENU);
+}
+
+async function replyShipping() {
+  const partes = ['🚚 *Envíos y entregas*',''];
+  partes.push(business.envios?.cobertura
+    ? `• Enviamos a *${business.envios.cobertura}* 📦`
+    : '• Cobertura de envíos: *Por confirmar*.');
+  partes.push('• Costo: se calcula según ciudad y te lo confirmamos al coordinar.');
+  partes.push(business.envios?.plazo
+    ? `• Tiempo estimado: *${business.envios.plazo}*.`
+    : '• Tiempo estimado de entrega: *Por confirmar*.');
+  if (business.envios?.pago_contra_entrega === true) {
+    partes.push('• Pago contra entrega disponible en zonas seleccionadas.');
+  } else if (business.envios?.pago_contra_entrega === false) {
+    partes.push('• Pago contra entrega: *no disponible por el momento*.');
+  }
+  partes.push('');
+  partes.push('Para coordinar tu envío, tocá la *opción 6* del menú y te ayuda una asesora.');
+  partes.push('');
+  partes.push('Escribí *menú* para volver al menú principal.');
+
+  await botTypes();
+  addMessage('bot', partes.join('\n'));
+  setState(STATES.MENU);
+}
+
+async function replyDeriveToHuman() {
+  await botTypes();
+  addMessage('bot',
+    '👩‍💼 ¡Perfecto! Te derivamos con una *asesora humana*.\n\n' +
+    'En breve te va a contactar por este mismo chat.\n' +
+    'Mientras tanto, el asistente automático se pone en pausa 🙌'
+  );
+  trace('sql', 'INSERT INTO mensajes (bot) ... UPSERT clientes_whatsapp SET estado_conversacion = \'PAUSED_HUMAN\'');
+  setState(STATES.PAUSED_HUMAN);
+
+  // Generar resumen
+  trace('sql', 'SELECT * FROM trafico_clientes WHERE telefono = $1 → getTraffic');
+  trace('sql', 'SELECT contenido, origen FROM mensajes WHERE telefono = $1 ORDER BY created_at DESC LIMIT N → último contexto');
+
+  const resumen = buildHandoffSummary();
+  trace('sql', 'INSERT INTO resumenes_atencion (telefono, origen_trafico, modelo_seleccionado, interes_color, necesidad, resumen JSONB)');
+  trace('ok', 'Resumen para Atención generado y persistido');
+  populateResumen(resumen);
+  showToast('Nuevo handoff', `${session.nombre} espera asesora`);
+  updateKpis();
+}
+
+async function replyContact() {
+  const partes = ['📍 *Contacto y horarios*',''];
+  partes.push('• WhatsApp: este mismo chat 😉');
+  partes.push(business.horario_atencion
+    ? `• Horario de atención: *${business.horario_atencion}*.`
+    : '• Horario de atención: *Por confirmar*.');
+  if (business.instagram) partes.push(`• Instagram: *${business.instagram}*.`);
+  if (business.direccion_fisica) partes.push(`• Dirección: ${business.direccion_fisica}.`);
+  partes.push('');
+  partes.push('Escribí *menú* para volver al menú principal.');
+
+  await botTypes();
+  addMessage('bot', partes.join('\n'));
+  setState(STATES.MENU);
+}
+
+async function greetAndShowMenu() {
+  await botTypes();
+  addMessage('bot', '¡Hola! 👋 Somos *Cecilia Tedin*.\nElegí una opción del menú para que te ayudemos 😊');
+  trace('sql', 'INSERT INTO mensajes (bot) saludo');
+  await botPause(400);
+  addMessage('bot system', '[Menú principal] 1 Catálogo · 2 Modelos nuevos · 3 Precios · 4 Stock · 5 Envíos · 6 Asesora · 7 Contacto', true);
+  trace('sql', 'INSERT INTO mensajes contenido=\'[Menú principal]\'');
+  setState(STATES.MENU);
+}
+
+async function showMenu(hint) {
+  await botTypes();
+  if (hint) addMessage('bot', hint);
+  await botPause(260);
+  addMessage('bot system', '[Menú principal] 1 Catálogo · 2 Modelos nuevos · 3 Precios · 4 Stock · 5 Envíos · 6 Asesora · 7 Contacto', true);
+  setState(STATES.MENU);
+}
+
+/* ============================================================
+   RESUMEN PARA ATENCIÓN — extractors ligeros
+   ============================================================ */
+
+function buildHandoffSummary() {
+  // Escanear mensajes del cliente del más reciente al más antiguo:
+  // la intención más reciente gana, igual que summary.service.js real.
+  const clienteMsgs = session.mensajes
+    .filter(m => m.origen === 'cliente')
+    .map(m => m.texto.toLowerCase());
+
+  let modelo = null;
+  // Recorremos de atrás para adelante y nos quedamos con el primer hit
+  // encontrado yendo hacia atrás = el último mencionado en el tiempo.
+  for (let i = clienteMsgs.length - 1; i >= 0 && !modelo; i--) {
+    const m = clienteMsgs[i].match(/modelo\s*(1|2|3|uno|dos|tres)/i);
+    if (m) {
+      const map = { uno: 1, dos: 2, tres: 3 };
+      const n = map[m[1]] || m[1];
+      modelo = `Modelo ${n}`;
+    } else if (/oferta/i.test(clienteMsgs[i])) {
+      modelo = 'Oferta del día';
+    }
+  }
+
+  let color = null;
+  const colores = ['negro','blanco','rojo','azul','verde','rosa','rosado','beige','crema','gris','dorado'];
+  for (let i = clienteMsgs.length - 1; i >= 0 && !color; i--) {
+    for (const c of colores) {
+      if (clienteMsgs[i].includes(c)) { color = c; break; }
+    }
+  }
+
+  // Talla: NO existe en summary.service.js real. Dejamos extracción pero
+  // marcamos como divergencia D1 en CORRESPONDENCIA-CODIGO-REAL.md.
+  let talla = null;
+  for (let i = clienteMsgs.length - 1; i >= 0 && !talla; i--) {
+    const m = clienteMsgs[i].match(/\btalla\s*(xs|s|m|l|xl|xxl)\b/i);
+    if (m) talla = m[1].toUpperCase();
+  }
+
+  // Necesidad — heurística básica
+  let necesidad = null;
+  if (/regalo|cumple|cumpleaños|aniversario/i.test(clienteMsgs)) necesidad = 'Regalo · plazo corto';
+  else if (/urgente|rápido|ya|hoy|mañana/i.test(clienteMsgs)) necesidad = 'Plazo urgente';
+  else if (/evento|fiesta|boda|graduaci/i.test(clienteMsgs)) necesidad = 'Evento específico';
+
+  const origen = session.origen === 'anuncio' && session.referral
+    ? { tipo: 'Anuncio', detalle: session.referral.headline || 'Campaña de Meta', campaignId: session.referral.source_id }
+    : { tipo: 'Orgánico', detalle: 'Escribió directo al número' };
+
+  return {
+    origen,
+    modelo: modelo || 'Por confirmar',
+    interes: color ? `${modelo || 'Prenda'} · color ${color}${talla ? ` · talla ${talla}` : ''}` : 'Por confirmar',
+    necesidad: necesidad || 'Por confirmar',
+    ts: new Date()
+  };
+}
+
+function populateResumen(r) {
+  const origenEl = $('#field-origen');
+  if (r.origen.tipo === 'Anuncio') {
+    origenEl.classList.remove('pending');
+    origenEl.innerHTML = `Anuncio <span class="badge-ad">AD</span><div class="sub">${escape(r.origen.detalle)}${r.origen.campaignId ? ` · ID ${escape(r.origen.campaignId)}` : ''}</div>`;
+  } else {
+    origenEl.classList.remove('pending');
+    origenEl.innerHTML = `Orgánico<div class="sub">${escape(r.origen.detalle)}</div>`;
+  }
+
+  setField('#field-modelo', r.modelo);
+  setField('#field-interes', r.interes);
+  setField('#field-necesidad', r.necesidad);
+
+  $('#resume-bot-btn').hidden = false;
+  $('#resumen-foot').textContent = `Generado ${fmtTime(r.ts)} · persistido en resumenes_atencion`;
+}
+
+function setField(sel, val) {
+  const el = $(sel);
+  el.textContent = val;
+  if (val !== 'Por confirmar') el.classList.remove('pending');
+  else el.classList.add('pending');
+}
+
+/* ============================================================
+   UI HELPERS
+   ============================================================ */
+
+function $(sel) { return document.querySelector(sel); }
+function escape(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+function fmtTime(d) {
+  return d.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit' });
+}
+function fmtMsgContent(text) {
+  // Convertimos *bold* al markup, respetando escape previo
+  return escape(text).replace(/\*(.+?)\*/g, '<strong>$1</strong>');
+}
+
+function addMessage(kind, text, isSystem = false) {
+  const container = $('#messages');
+  const b = document.createElement('div');
+  const classes = kind.split(' ');
+  b.className = 'bubble ' + classes.join(' ');
+  if (isSystem || classes.includes('system')) {
+    b.classList.add('system');
+    b.textContent = text;
+  } else {
+    b.innerHTML = fmtMsgContent(text);
+    const time = document.createElement('div');
+    time.className = 'bubble-time';
+    const t = new Date();
+    time.innerHTML = `<span>${fmtTime(t)}</span>${classes.includes('bot') ? '<span class="send-check">✓</span>' : ''}`;
+    b.appendChild(time);
+  }
+  container.appendChild(b);
+  container.scrollTop = container.scrollHeight;
+
+  session.mensajes.push({ origen: classes.includes('cliente') ? 'cliente' : 'bot', texto: text, ts: new Date(), isSystem });
+  if (classes.includes('cliente')) {
+    updateConvoLast(text);
+  }
+  updateKpis();
+}
+
+function addImagePlaceholder(caption) {
+  const container = $('#messages');
+  const b = document.createElement('div');
+  b.className = 'bubble bot';
+  const img = document.createElement('div');
+  img.className = 'img-placeholder';
+  img.textContent = caption;
+  b.appendChild(img);
+  const time = document.createElement('div');
+  time.className = 'bubble-time';
+  time.innerHTML = `<span>${fmtTime(new Date())}</span><span class="send-check">✓</span>`;
+  b.appendChild(time);
+  container.appendChild(b);
+  container.scrollTop = container.scrollHeight;
+  session.mensajes.push({ origen: 'bot', texto: `[Imagen: ${caption}]`, ts: new Date() });
+  updateKpis();
+}
+
+let typingEl = null;
+async function botTypes() {
+  const container = $('#messages');
+  typingEl = document.createElement('div');
+  typingEl.className = 'typing';
+  typingEl.innerHTML = '<span></span><span></span><span></span>';
+  container.appendChild(typingEl);
+  container.scrollTop = container.scrollHeight;
+  await botPause(500 + Math.random() * 300);
+  if (typingEl && typingEl.parentNode) typingEl.parentNode.removeChild(typingEl);
+  typingEl = null;
+}
+function botPause(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function setState(newState) {
+  const prev = session.estado;
+  session.estado = newState;
+  const chip = $('#active-chip');
+  const resChip = $('#resumen-chip');
+  chip.className = 'state-chip state-' + newState;
+  chip.textContent = newState;
+  resChip.className = 'state-chip state-' + newState;
+  resChip.textContent = newState;
+  trace('sql', `UPSERT clientes_whatsapp SET estado_conversacion = '${newState}' (prev=${prev})`);
+  trace('state', `Transición ${prev} → ${newState}`);
+  renderConvoList();
+}
+
+function updateConvoLast(text) {
+  const el = document.querySelector('.convo.active .convo-last');
+  if (el) el.textContent = text.length > 32 ? text.slice(0, 32) + '…' : text;
+  const timeEl = document.querySelector('.convo.active .convo-meta .time');
+  if (timeEl) timeEl.textContent = fmtTime(new Date());
+}
+
+function renderConvoList() {
+  const ul = $('#convo-list');
+  ul.innerHTML = '';
+  const li = document.createElement('li');
+  li.className = 'convo active';
+  const last = session.mensajes.length
+    ? session.mensajes[session.mensajes.length - 1].texto
+    : 'Nuevo contacto';
+  li.innerHTML = `
+    <div class="avatar ${session.avatarClass}">${session.initials}</div>
+    <div class="convo-info">
+      <div class="convo-name">${escape(session.nombre)}</div>
+      <div class="convo-last">${escape(last.length > 32 ? last.slice(0, 32) + '…' : last)}</div>
+    </div>
+    <div class="convo-meta">
+      <span class="time">${fmtTime(new Date())}</span>
+      <span class="state-chip state-${session.estado}">${session.estado}</span>
+    </div>
+  `;
+  ul.appendChild(li);
+}
+
+/* ============================================================
+   KPI STRIP
+   ============================================================ */
+let appStart = Date.now();
+function updateKpis() {
+  $('#kpi-convos').textContent = '1';
+  const pending = session.estado === STATES.PAUSED_HUMAN ? 1 : 0;
+  $('#kpi-pending').textContent = String(pending);
+  $('#kpi-msgs').textContent = String(session.mensajes.length);
+  $('#kpi-ads').textContent = session.origen === 'anuncio' ? '100%' : '0%';
+}
+function tickUptime() {
+  const s = Math.floor((Date.now() - appStart) / 1000);
+  const h = String(Math.floor(s / 3600)).padStart(2, '0');
+  const m = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+  const sec = String(s % 60).padStart(2, '0');
+  $('#kpi-uptime').textContent = `${h}:${m}:${sec}`;
+}
+function tickClock() {
+  $('#clock').textContent = new Date().toLocaleTimeString('es-BO');
+}
+
+/* ============================================================
+   TRACE PANEL
+   ============================================================ */
+function trace(kind, msg) {
+  const body = $('#trace-body');
+  const row = document.createElement('div');
+  row.className = 'trace-entry ' + kind;
+  const t = new Date();
+  const ts = `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}:${String(t.getSeconds()).padStart(2,'0')}.${String(t.getMilliseconds()).padStart(3,'0')}`;
+  row.innerHTML = `<span class="ts">[${ts}]</span>${escape(msg)}`;
+  body.appendChild(row);
+  body.scrollTop = body.scrollHeight;
+}
+
+/* ============================================================
+   TOASTS
+   ============================================================ */
+function showToast(title, body) {
+  const container = $('#toasts');
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.innerHTML = `<div class="toast-title">${escape(title)}</div>${escape(body)}`;
+  container.appendChild(t);
+  setTimeout(() => {
+    t.style.transition = 'opacity 0.3s, transform 0.3s';
+    t.style.opacity = '0';
+    t.style.transform = 'translateX(20px)';
+    setTimeout(() => t.remove(), 300);
+  }, 4000);
+}
+
+/* ============================================================
+   LOAD SCENARIO
+   ============================================================ */
+function loadScenario(key) {
+  const sc = SCENARIOS[key];
+  session = JSON.parse(JSON.stringify(sc));
+  session.mensajes = session.mensajes.map(m => ({ ...m, ts: new Date(m.ts || Date.now()) }));
+
+  // Header
+  $('#active-name').textContent = session.nombre;
+  $('#active-phone').textContent = `+${session.phone} · ${session.ciudad}`;
+  $('#active-avatar').textContent = session.initials;
+  $('#active-avatar').className = 'avatar ' + session.avatarClass;
+  $('#active-chip').className = 'state-chip state-' + session.estado;
+  $('#active-chip').textContent = session.estado;
+
+  // Resumen
+  $('#resumen-chip').className = 'state-chip state-' + session.estado;
+  $('#resumen-chip').textContent = session.estado;
+  resetResumen();
+
+  // Messages
+  const container = $('#messages');
+  container.innerHTML = '';
+  for (const m of session.mensajes) {
+    const kind = m.origen === 'cliente' ? 'cliente' : (m.isSystem ? 'bot system' : 'bot');
+    const b = document.createElement('div');
+    b.className = 'bubble ' + kind;
+    if (m.isSystem) {
+      b.textContent = m.texto;
+    } else {
+      b.innerHTML = fmtMsgContent(m.texto);
+      const time = document.createElement('div');
+      time.className = 'bubble-time';
+      time.innerHTML = `<span>${fmtTime(m.ts)}</span>${m.origen === 'bot' ? '<span class="send-check">✓</span>' : ''}`;
+      b.appendChild(time);
+    }
+    container.appendChild(b);
+  }
+  container.scrollTop = container.scrollHeight;
+
+  // Trace
+  $('#trace-body').innerHTML = '';
+  trace('info', `Escenario cargado: ${key} · estado inicial = ${session.estado} · origen = ${session.origen}`);
+  if (session.origen === 'anuncio' && session.referral) {
+    trace('info', `Referral: ${session.referral.headline} (source_id=${session.referral.source_id})`);
+  }
+
+  renderConvoList();
+  updateKpis();
+}
+
+function resetResumen() {
+  const origenEl = $('#field-origen');
+  if (session.origen === 'anuncio' && session.referral) {
+    origenEl.classList.remove('pending');
+    origenEl.innerHTML = `Anuncio <span class="badge-ad">AD</span><div class="sub">${escape(session.referral.headline || '—')}</div>`;
+  } else {
+    origenEl.classList.add('pending');
+    origenEl.textContent = session.estado === 'ORGANIC' ? 'A la espera del primer mensaje' : 'Orgánico';
+    if (session.estado !== 'ORGANIC') origenEl.classList.remove('pending');
+  }
+  setField('#field-modelo', 'Por confirmar');
+  setField('#field-interes', 'Por confirmar');
+  setField('#field-necesidad', 'Por confirmar');
+  $('#resume-bot-btn').hidden = true;
+  $('#resumen-foot').textContent = 'resumen vacío — aún no se derivó';
+}
+
+/* ============================================================
+   EVENT WIRING
+   ============================================================ */
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Scenario select
+  $('#scenario-select').addEventListener('change', (e) => {
+    loadScenario(e.target.value);
+  });
+
+  // Reset button
+  $('#reset-btn').addEventListener('click', () => {
+    loadScenario($('#scenario-select').value);
+    showToast('Simulación reiniciada', 'Estado volvió al inicial del escenario');
+  });
+
+  // Theme toggle
+  $('#theme-toggle').addEventListener('click', () => {
+    const cur = document.documentElement.getAttribute('data-theme');
+    const next = cur === 'dark' ? 'light' : (cur === 'light' ? '' : 'dark');
+    if (next) document.documentElement.setAttribute('data-theme', next);
+    else document.documentElement.removeAttribute('data-theme');
+    try { localStorage.setItem('cecilia-theme', next); } catch(e) {}
+  });
+
+  // Restore theme
+  try {
+    const t = localStorage.getItem('cecilia-theme');
+    if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+  } catch(e) {}
+
+  // Compose form
+  $('#compose-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const ta = $('#compose-input');
+    const text = ta.value.trim();
+    if (!text) return;
+    ta.value = '';
+    ta.style.height = 'auto';
+    processIncoming(text);
+  });
+
+  // Textarea auto-resize + Enter to send
+  const ta = $('#compose-input');
+  ta.addEventListener('input', () => {
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+  });
+  ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      $('#compose-form').dispatchEvent(new Event('submit'));
+    }
+  });
+
+  // Quick buttons
+  document.querySelectorAll('.quick').forEach(b => {
+    b.addEventListener('click', () => {
+      $('#compose-input').value = b.dataset.send;
+      $('#compose-form').dispatchEvent(new Event('submit'));
+    });
+  });
+
+  // Resume bot
+  $('#resume-bot-btn').addEventListener('click', () => {
+    setState(STATES.MENU);
+    addMessage('bot system', '[Asesora reactivó el bot — flujo restablecido]', true);
+    resetResumen();
+    showToast('Bot reactivado', 'La clienta volverá al menú principal al próximo mensaje');
+  });
+
+  // Trace toggle
+  $('#trace-toggle').addEventListener('click', () => {
+    const p = $('#trace-panel');
+    const open = p.dataset.open === 'true';
+    p.dataset.open = (!open).toString();
+    p.querySelector('.trace-head h3').textContent = (!open ? '▾' : '▸') + ' Trace técnico — qué hace el bot tras bambalinas';
+  });
+
+  // Clocks
+  setInterval(tickClock, 1000);
+  setInterval(tickUptime, 1000);
+  tickClock();
+  tickUptime();
+
+  // Boot
+  loadScenario('organic-new');
+});
+</script>
