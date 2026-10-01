@@ -1,9 +1,10 @@
-# BRIEF-032 — SIGTERM handler + cierre limpio del pool (stub)
+# BRIEF-032 — SIGTERM handler + cierre limpio del pool
 
-- **Dueño:** por asignar
-- **Estado:** TODO (stub)
+- **Dueño:** Claude
+- **Estado:** HECHO local (2026-10-01)
 - **Prioridad:** P0 pre-Fase 0 (ronda 2)
 - **Creado:** 2026-09-30
+- **Cerrado:** 2026-10-01
 - **Resuelve:** G2 del `../auditoria/02-Escaner-Vulnerabilidades.md`.
 
 ## Objetivo
@@ -35,3 +36,21 @@ antes de cerrar el pool.
 ## Dependencia
 
 Requiere BRIEF-026 cerrado antes para poder esperar a la cola.
+
+## Implementación — [ByClaude] 2026-10-01
+
+- `src/services/queue.service.js` ahora exporta `drain()` — snapshot sincrónico
+  del Map `inflight` + `Promise.all` que swallow errores. Los test harnesses
+  verifican FIFO vacía resuelve rápido, cola llena espera, errores no propagan.
+- `src/services/inbox.service.js` ahora expone `stop()` — hace `clearInterval`
+  del timer de recovery y devuelve la recovery en vuelo si la hay.
+- `src/app.js` captura `app.listen(...)` en `const server` y registra
+  `process.on("SIGTERM", ...)` y `process.on("SIGINT", ...)`.
+  Secuencia del shutdown: `server.close()` → `inbox.stop()` → `drainQueue()` →
+  `pool.end()` → `process.exit(0)`. Timeout duro de 15s con `exit(1)` de respaldo
+  (`setTimeout.unref()` para no bloquear si el ciclo cierra antes).
+- `tests/queue.test.js` + `tests/inbox.test.js` + `tests/shutdown.test.js` cubren
+  las tres piezas. `tests/helpers/app-harness.js` extendido con `signalHandlers`
+  separado y server stub con `.close(cb)`.
+- Suite completa Node 24.18.0 con `DEDUP_TEST_DATABASE=0`: 193 tests, 186 pass,
+  7 skipped (bloques PostgreSQL), 0 fail.

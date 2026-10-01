@@ -52,10 +52,16 @@ function sign(value) {
 }
 
 
+// [ByClaude] (chequeo 2026-09-30 P2) Fix Unicode: la comparación debe ser
+// sobre longitud de BUFFER, no de string. Caracteres multibyte (ej. "é" en
+// UTF-8 ocupa 2 bytes aunque .length diga 1) hacían que timingSafeEqual
+// recibiera buffers de longitud distinta y lanzara ERR_CRYPTO_TIMING_SAFE_EQUAL_LENGTH.
 function safeStrEqual(a, b) {
   if (typeof a !== "string" || typeof b !== "string") return false;
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+  const bufA = Buffer.from(a, "utf8");
+  const bufB = Buffer.from(b, "utf8");
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
 }
 
 
@@ -165,8 +171,14 @@ router.post("/dashboard/login", (req, res) => {
     if (attempt.bloqueadoHasta && now < attempt.bloqueadoHasta) {
       return res.status(429).json({ error: "Demasiados intentos. Intenta más tarde." });
     }
-    // Si expiró la ventana, reset
-    if (now > attempt.ventanaInicio + WINDOW_MS && !attempt.bloqueadoHasta) {
+    // [ByClaude] (chequeo 2026-09-30 P2) Fix bloqueo renovado:
+    // antes el reset de ventana requería !bloqueadoHasta, pero un bloqueo
+    // vencido conservaba el valor truthy y los `intentos` seguían en 5.
+    // El próximo fallo subía a 6 y re-disparaba un bloqueo inmediato.
+    // Resetear también cuando el bloqueo expiró.
+    const windowExpired = now > attempt.ventanaInicio + WINDOW_MS;
+    const blockExpired = attempt.bloqueadoHasta && now >= attempt.bloqueadoHasta;
+    if (windowExpired || blockExpired) {
       attempt = { intentos: 0, ventanaInicio: now, bloqueadoHasta: null };
     }
   } else {

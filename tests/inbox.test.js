@@ -96,3 +96,33 @@ test("PostgreSQL: SQL real de recepcion y dedup sobre tabla temporal aislada", {
     assert.equal((await query("SELECT count(*)::int AS n FROM mensajes_recibidos WHERE estado='completado'")).rows[0].n,2);
   } finally { try { await client.query("ROLLBACK"); } finally { await client.end(); } }
 });
+
+// [ByClaude] (BRIEF-032) stop() apaga el recovery para shutdown limpio.
+test("stop detiene el loop de recovery y permite shutdown limpio", async () => {
+  const timers = [];
+  const h = memoryInbox({ every: (fn, ms) => {
+    const t = { fn, ms, cleared: false, unref() {} };
+    timers.push(t);
+    return t;
+  } });
+  // Interceptamos clearInterval sobre los timers del harness.
+  const originalClearInterval = global.clearInterval;
+  global.clearInterval = (t) => { if (t && typeof t === "object") t.cleared = true; else originalClearInterval(t); };
+  try {
+    h.start(async () => {});
+    assert.equal(timers.length, 1);
+    assert.equal(timers[0].cleared, false);
+    await h.stop();
+    assert.equal(timers[0].cleared, true);
+    // Un segundo stop no revienta.
+    await h.stop();
+  } finally {
+    global.clearInterval = originalClearInterval;
+  }
+});
+
+test("stop sin start no revienta", async () => {
+  const h = memoryInbox();
+  // No llamamos h.start — stop debe resolver limpio.
+  await h.stop();
+});

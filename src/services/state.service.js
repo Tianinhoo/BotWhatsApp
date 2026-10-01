@@ -486,9 +486,13 @@ async function replyCatalog(phone, { isFirstTime = false } = {}) {
   await sendAndLog(phone, intro);
   await sendCatalogImages(phone);
 
+  // [ByClaude] (chequeo 2026-09-30 P2) Texto honesto: el bot V1 NO interpreta
+  // texto libre. Antes esta ruta prometía "escribí su nombre y te ayudamos"
+  // y después mandaba el menú al cliente que escribía — mala UX.
+  // Mismo criterio que rutas 3/4: derivar explícitamente a la opción 6.
   const outro =
-    "Si algún modelo te llamó la atención, escribí su nombre y te ayudamos " +
-    "con tallas, colores y precios 💖\n\n" +
+    "Si algún modelo te llamó la atención, tocá la *opción 6* del menú " +
+    "y una asesora te confirma tallas, colores y precios 💖\n\n" +
     "Escribí *menú* para volver al menú principal.";
 
   await sendAndLog(phone, outro);
@@ -509,9 +513,10 @@ async function replyNewModels(phone) {
   await sendAndLog(phone, intro);
   await sendCatalogImages(phone);
 
+  // [ByClaude] (chequeo 2026-09-30 P2) Mismo criterio que ruta 1: derivar.
   const outro =
-    "Si te interesa alguno, escribinos su nombre o número y te contamos " +
-    "tallas, colores y disponibilidad 💖\n\n" +
+    "Si te interesa alguno, tocá la *opción 6* del menú y una asesora te " +
+    "confirma tallas, colores y disponibilidad 💖\n\n" +
     "Escribí *menú* para volver al menú principal.";
 
   await sendAndLog(phone, outro);
@@ -693,7 +698,7 @@ async function replyContact(phone) {
 // resultado. Si la selección no corresponde a ninguna opción válida,
 // devuelve { ok: false, reason: "no_match" } sin efectos secundarios,
 // para que app.js decida si reenviar el menú al cliente.
-async function processMenuOption(phone, rawSelection) {
+async function processMenuOption(phone, rawSelection, extras = {}) {
 
   const option = resolveMenuOption(rawSelection);
 
@@ -735,7 +740,9 @@ async function processMenuOption(phone, rawSelection) {
     }
 
     case "asesor": {
-      await replyDeriveToHuman(phone);
+      // [ByClaude] (BRIEF-031) Si viene reason externo (ej. media recibido),
+      // lo pasamos a replyDeriveToHuman para que quede en el Resumen.
+      await replyDeriveToHuman(phone, { reason: extras.reason || null });
       return { ok: true, option, action: "paused_human" };
     }
 

@@ -39,10 +39,21 @@ const { tryClaimMessage } = require("./services/dedup.service");
 const { createInbox } = require("./services/inbox.service");
 const inbox = createInbox(pool);
 
+// [ByClaude] (BRIEF-032) Drenaje de la cola FIFO para shutdown limpio.
+const { drain: drainQueue } = require("./services/queue.service");
+
 const dashboard = require("./routes/dashboard");
 
 // [ByOpenCode] (BRIEF-006) Helpers de logging redactado (PII/secrets).
 const { redactPhone, safeError } = require("./services/logger.service");
+
+// [ByClaude] (BRIEF-031) Tipos de mensaje que el bot V1 NO interpreta.
+//   - MEDIA_HANDOFF_TYPES: derivamos a asesora humana (necesita atención real).
+//   - MEDIA_SILENT_TYPES: ignoramos (no son intención, son "ruido social").
+const MEDIA_HANDOFF_TYPES = new Set([
+  "image", "audio", "video", "document", "location", "contacts"
+]);
+const MEDIA_SILENT_TYPES = new Set(["sticker", "reaction"]);
 
 
 const app = express();
@@ -311,6 +322,30 @@ async function processIncoming(value, message) {
         return;
       }
 
+      // [ByClaude] (BRIEF-031) Mensajes no-texto / no-interactive:
+      //   - sticker / reaction: ignorar silenciosamente (no son intención real).
+      //   - image / audio / video / document / location / contacts: el bot V1
+      //     no interpreta este contenido. Derivamos directo a asesora con un
+      //     reason específico. La clienta ya mandó algo "serio" (foto, audio,
+      //     ubicación): responder "no te entiendo" es mala UX.
+      if (MEDIA_SILENT_TYPES.has(message.type)) {
+        console.log(
+          `[ByClaude] (BRIEF-031) Tipo ${message.type} de ${redactPhone(phone)}: ignorado sin respuesta.`
+        );
+        return;
+      }
+      if (MEDIA_HANDOFF_TYPES.has(message.type)) {
+        console.log(
+          `[ByClaude] (BRIEF-031) Tipo ${message.type} de ${redactPhone(phone)}: derivar a asesora.`
+        );
+        await processMenuOption(phone, "asesor", {
+          reason:
+            `El cliente envió un mensaje de tipo "${message.type}" ` +
+            `que el bot no puede interpretar. Revisá la conversación en WhatsApp directamente.`
+        });
+        return;
+      }
+
       // Extraemos la selección del cliente (interactivo o texto).
       const rawSelection = extractSelection(message);
       const option = resolveMenuOption(rawSelection);
@@ -402,7 +437,7 @@ if (process.env.NODE_ENV === "production" && !process.env.APP_SECRET) {
 // [ByCodex] (BRIEF-027) Recuperar solo recepciones no iniciadas; fallos a revision.
 inbox.start(processIncoming);
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
 
   console.log(
     `Cecilia Tedin Bot iniciado ✅`
@@ -413,3 +448,42 @@ app.listen(PORT, () => {
   );
 
 });
+
+
+// ======================================================
+// [ByClaude] (BRIEF-032) Cierre limpio en SIGTERM / SIGINT
+// ======================================================
+// Railway envia SIGTERM al desplegar. Sin este handler, Node corta
+// conexiones a Neon a mitad de transaccion y abandona trabajo encolado.
+// Orden del cierre:
+//   1. server.close()          -> deja de aceptar nuevas requests HTTP
+//   2. inbox.stop()            -> apaga el recovery loop y espera la ultima pasada
+//   3. drainQueue()            -> espera que la FIFO por telefono termine
+//   4. pool.end()              -> cierra el pool de Postgres sin cortar queries
+//   5. process.exit(0)
+// Timeout duro de 15s con exit(1) para que Railway reinicie si algo se cuelga.
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[shutdown] ${signal} recibido, cerrando limpio`);
+  const hardExit = setTimeout(() => {
+    console.error("[shutdown] Timeout 15s, salida forzada");
+    process.exit(1);
+  }, 15000);
+  hardExit.unref();
+  try {
+    await new Promise(resolve => server.close(resolve));
+    await inbox.stop();
+    await drainQueue();
+    await pool.end();
+    console.log("[shutdown] cerrado limpio");
+    process.exit(0);
+  } catch (error) {
+    console.error("[shutdown] error:", safeError(error));
+    process.exit(1);
+  }
+}
+
+process.on("SIGTERM", () => { void shutdown("SIGTERM"); });
+process.on("SIGINT",  () => { void shutdown("SIGINT"); });

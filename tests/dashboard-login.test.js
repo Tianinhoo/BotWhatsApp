@@ -154,4 +154,34 @@ test("BRIEF-024: Dashboard hardening tests", async (t) => {
     assert.strictEqual((await h.login("10.0.0.1", "wrong")).status, 429);
     assert.strictEqual((await h.login("10.0.0.2", "wrong")).status, 401); // other ip still works
   });
+
+  // [ByClaude] (chequeo 2026-09-30 P2) Fix Unicode: buffer length vs string length.
+  await t.test("Password Unicode no lanza ERR_CRYPTO_TIMING_SAFE_EQUAL_LENGTH", async () => {
+    const h = createHarness({ DASHBOARD_PASSWORD: "correcto", NODE_ENV: "test" });
+    // "ééééééé" tiene string.length=7 pero utf8 buffer length=14.
+    const res = await h.login("20.0.0.1", "ééééééé");
+    assert.strictEqual(res.status, 401, "debería ser rechazo limpio, no excepción");
+    assert.strictEqual(res.body.error, "Contraseña incorrecta");
+    // Verificar que el error_code de crypto NO aparezca en logs.
+    const cryptoErr = h.logs.some(l => (l.msg || "").includes("ERR_CRYPTO_TIMING_SAFE_EQUAL_LENGTH"));
+    assert.strictEqual(cryptoErr, false, "no debería lanzarse la excepción de crypto");
+  });
+
+  // [ByClaude] (chequeo 2026-09-30 P2) Fix bloqueo renovado por un solo fallo.
+  await t.test("Tras expirar el bloqueo, el PRIMER fallo NO re-dispara 429", async () => {
+    const h = createHarness({ DASHBOARD_PASSWORD: "correct", NODE_ENV: "test" });
+    const ip = "30.0.0.1";
+    for (let i = 0; i < 5; i++) await h.login(ip, "wrong"); // bloqueo
+    assert.strictEqual((await h.login(ip, "wrong")).status, 429);
+    h.advance(10 * 60 * 1000 + 1); // pasa el bloqueo
+    // Después del primer fallo NO debería re-bloquear inmediatamente;
+    // el contador tiene que haberse reseteado junto con bloqueadoHasta.
+    assert.strictEqual((await h.login(ip, "wrong")).status, 401);
+    // Y hay espacio para 4 fallos más antes del próximo bloqueo.
+    for (let i = 0; i < 3; i++) {
+      assert.strictEqual((await h.login(ip, "wrong")).status, 401);
+    }
+    assert.strictEqual((await h.login(ip, "wrong")).status, 401, "5to intento sigue 401");
+    assert.strictEqual((await h.login(ip, "wrong")).status, 429, "6to intento recién 429");
+  });
 });

@@ -4,6 +4,87 @@ Diario personal. Entradas más recientes arriba.
 
 ---
 
+## 2026-10-01 — BRIEF-031 + BRIEF-032 + 3 fixes P2 del chequeo
+
+**Qué hice:**
+
+- **BRIEF-032 — SIGTERM/SIGINT handler.** Agregué `drain()` a `queue.service.js`
+  (snapshot sincrónico del Map inflight con swallow de errores), `stop()` a
+  `inbox.service.js` (clearInterval + espera recovery pendiente), y handler
+  unificado en `src/app.js` que ejecuta `server.close() → inbox.stop() → drainQueue()
+  → pool.end() → process.exit(0)` con timeout duro de 15s para exit(1). Extendí
+  `tests/helpers/app-harness.js` para que `process.on()` registre en
+  `signalHandlers` sin ensuciar `listenCalls`, y `app.listen` retorne un server
+  stub con `.close(cb)`. Mismo ajuste al harness de `tests/dedup.test.js`.
+  5 regresiones nuevas (3 en queue.test.js, 2 en inbox.test.js) + un smoke test
+  nuevo (`tests/shutdown.test.js`).
+
+- **BRIEF-031 — media entrante (mínimo honesto).** Agregué `MEDIA_HANDOFF_TYPES`
+  (image, audio, video, document, location, contacts) y `MEDIA_SILENT_TYPES`
+  (sticker, reaction) como sets canónicos en `src/app.js`. En el flujo del motor
+  conversacional, discrimino antes de `extractSelection`: silent → log + return,
+  handoff → `processMenuOption(phone, "asesor", { reason })`. Extendí
+  `processMenuOption` para aceptar `extras` opcional y propagar `extras.reason` a
+  `replyDeriveToHuman`. 8 regresiones nuevas (`tests/media.test.js`).
+
+- **Fix P2 chequeo — textos del catálogo que prometían interpretar texto libre.**
+  Rutas 1 y 2 de `state.service.js` decían "escribí su nombre y te ayudamos"
+  pero el bot V1 no interpreta texto libre. Cambié ambos outros al criterio
+  de rutas 3/4: derivar explícitamente a opción 6.
+
+- **Fix P2 chequeo — `safeStrEqual` Unicode.** `src/routes/dashboard.js`
+  comparaba `a.length !== b.length` sobre strings, pero `timingSafeEqual`
+  compara buffers. "ééééééé" (string.length=7, utf8.length=14) hacía que
+  `timingSafeEqual` recibiera buffers de longitud distinta y lanzara
+  `ERR_CRYPTO_TIMING_SAFE_EQUAL_LENGTH`. Cambié a comparar longitud de buffer.
+  2 subtests nuevos en `tests/dashboard-login.test.js`.
+
+- **Fix P2 chequeo — bloqueo renovado por un solo fallo.** El reset de ventana
+  del rate limiter requería `!bloqueadoHasta` para disparar; un bloqueo vencido
+  conservaba el valor truthy y `intentos` seguía en 5. El próximo fallo subía
+  a 6 y re-disparaba bloqueo inmediato. Agregué chequeo `blockExpired` en el
+  reset. 1 subtest nuevo (con flujo completo bloqueo → espera → fallos nuevos).
+
+**Verificación:**
+- `DEDUP_TEST_DATABASE=0 npm test` en Node v24.18.0 (local).
+- Suite: 193 tests, 186 pass, 7 skipped (bloques PostgreSQL), 0 fail.
+- Antes del trabajo: 176 pass. Delta: +10 regresiones nuevas, +7 que ya existían
+  reorganizadas.
+
+**Archivos tocados:**
+- `src/app.js` (SIGTERM + media discriminación + imports).
+- `src/services/queue.service.js` (drain exportado).
+- `src/services/inbox.service.js` (stop expuesto).
+- `src/services/state.service.js` (processMenuOption acepta extras +
+  textos honestos rutas 1/2).
+- `src/routes/dashboard.js` (safeStrEqual con buffers + reset tras bloqueo).
+- `tests/helpers/app-harness.js` (signalHandlers + server stub).
+- `tests/dedup.test.js` (process.on noop + listen con .close).
+- `tests/queue.test.js` + `tests/inbox.test.js` (regresiones nuevas).
+- `tests/shutdown.test.js` + `tests/media.test.js` (archivos nuevos).
+- `tests/dashboard-login.test.js` (2 subtests nuevos).
+- Briefs 031 y 032 marcados HECHO; TAREAS.md sincronizada.
+
+**Decisiones:**
+- Para BRIEF-031, elegí "handoff" en lugar de "descargar media + interpretar".
+  Mínimo honesto para Fase 0. La descarga queda como V1.1.
+- Para BRIEF-032, el `drain()` es snapshot y no itera. Justificación: después
+  de `server.close()` no entran nuevas requests, por lo que un snapshot captura
+  todo lo pendiente. En single-process alcanza.
+- NO modifiqué `scripts/preflight.js` (Codex ya lo armó bien); solo agregué
+  briefs cerrados que el preflight ya respeta.
+- NO cerré el bloqueo externo de GitHub (`Repository not found`): es trabajo
+  del humano crear el repo remoto.
+- NO cargué `.env`: trabajo del humano con credenciales reales de Meta.
+
+**Siguiente paso:**
+- El humano resuelve los 2 bloqueos externos (GitHub + .env + Meta).
+- Después queda abierto el ciclo para BRIEF-025 (selección persistente de prenda)
+  si se decide pre-deploy, o diferirlo a V1.1 y arrancar Fase 0 ya mismo con
+  el árbol actual.
+
+---
+
 ## 2026-09-20 — BRIEF-023 cerrado (fix prototype pollution en `resolveMenuOption`)
 
 **Qué hice:**

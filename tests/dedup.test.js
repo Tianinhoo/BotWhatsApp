@@ -18,7 +18,8 @@ function load(file, overrides, logs = []) {
     module,
     exports: module.exports,
     require: (name) => Object.hasOwn(overrides, name) ? overrides[name] : nativeRequire(name),
-    process: { env: {} },
+    // [ByClaude] (BRIEF-032) process.on noop para que app.js pueda registrar SIGTERM.
+    process: { env: {}, on() {} },
     console: {
       log: (...args) => logs.push(args.join(" ")),
       error: (...args) => logs.push(args.join(" ")),
@@ -31,7 +32,9 @@ function load(file, overrides, logs = []) {
 function webhook(deps, logs = []) {
   let handler;
   const app = {
-    use() {}, get() {}, listen() {},
+    use() {}, get() {},
+    // [ByClaude] (BRIEF-032) listen debe retornar server stub con .close para shutdown handler.
+    listen() { return { close(done) { if (typeof done === "function") done(); } }; },
     post(route, ...handlers) {
       if (route === "/webhook") handler = handlers.at(-1);
     }

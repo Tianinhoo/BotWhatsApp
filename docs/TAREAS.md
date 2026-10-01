@@ -1,7 +1,7 @@
 # Tablero de tareas
 
 Tablero vivo. Cada dueño actualiza el estado de su brief acá.
-Última actualización: 2026-10-01 por Codex (027/028/029 y timeout C1 verificados; GitHub y Meta pendientes).
+Última actualización: 2026-10-01 por Claude (cierre local de BRIEF-031 + BRIEF-032 + 3 fixes P2 del chequeo 2026-09-30).
 
 ## Cierre y preparación — 2026-10-01
 
@@ -52,8 +52,8 @@ Estos bloquean la Fase 0. Se hicieron visibles tras la auditoría externa del 20
 | BRIEF-028 | Procesar todos los mensajes de un webhook | Codex | HECHO LOCAL | Todos los niveles, contacto por wa_id, aislamiento de fallos y paralelismo; Node 22: 160 pass/6 skip. |
 | BRIEF-029 | Detener ante fallo de lectura de estado | Codex | HECHO LOCAL | 2026-10-01: error propagado, sin envíos/transiciones; 156 pass/6 skip. Recuperación depende de 027. |
 | BRIEF-030 | Timeout Meta + evaluación de circuit breaker | Codex | PARCIAL | C1: cancelación a 8s en todo envío, Node22 162 pass/6 skip; C2 pendiente, sin reintentos ciegos. |
-| BRIEF-031 | Media entrante y mensajes no-texto (resuelve A1) | por asignar | TODO | Audio/sticker/image hoy caen a hint genérico. Mínimo: fallback honesto a asesora. |
-| BRIEF-032 | SIGTERM handler + cierre limpio de pool (resuelve G2) | por asignar | TODO | Railway envía SIGTERM en deploy. Hoy conexiones a Neon se cortan a mitad. |
+| BRIEF-031 | Media entrante y mensajes no-texto (resuelve A1) | Claude | HECHO | [ByClaude] 2026-10-01: image/audio/video/document/location/contacts → handoff con reason; sticker/reaction → silencio. 8 regresiones nuevas. Suite 193/186 pass/0 fail. |
+| BRIEF-032 | SIGTERM handler + cierre limpio de pool (resuelve G2) | Claude | HECHO | [ByClaude] 2026-10-01: `drain()` en queue, `stop()` en inbox, handler SIGTERM/SIGINT en app.js con secuencia close → stop → drain → pool.end → exit(0); timeout 15s respaldo. 5 regresiones nuevas. |
 
 ## P0.5 — Smoke test antes de pagar (Fase 0)
 

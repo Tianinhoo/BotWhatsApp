@@ -31,7 +31,9 @@ function harness() {
   const filename = resolve(__dirname, "../src/services/queue.service.js");
   vm.runInContext(readFileSync(filename, "utf8"), context, { filename });
   return {
-    run: module.exports.processInOrder, logs, timers,
+    run: module.exports.processInOrder,
+    drain: module.exports.drain,
+    logs, timers,
     // Inspeccion interna acotada para verificar GC sin exponer la Map al bot.
     size: () => vm.runInContext("inflight.size", context),
     advance(ms) {
@@ -134,4 +136,46 @@ test("cola: trabajo terminado cancela aviso y libera claves tras exito o fallo",
   q.advance(100000);
   assert.equal(q.logs.length, 0);
   assert.equal(await q.run("1", () => "recuperado"), "recuperado");
+});
+
+// [ByClaude] (BRIEF-032) Shutdown limpio depende de drain() esperando la FIFO.
+test("drain: espera a que la cola FIFO termine antes de resolver", async () => {
+  const q = harness(), a = deferred(), b = deferred(), events = [];
+  const first = q.run("00001", async () => { events.push("A"); await a.promise; events.push("A-end"); });
+  const second = q.run("00001", async () => { events.push("B"); await b.promise; events.push("B-end"); });
+  const third = q.run("00002", async () => { events.push("C"); return "done"; });
+  await tick();
+  // drain no debe resolver hasta que todas las cadenas terminen.
+  let drained = false;
+  const drainPromise = q.drain().then(() => { drained = true; });
+  await tick();
+  assert.equal(drained, false);
+  // El de otro telefono termina solo; no influye en los dos del 00001.
+  await third;
+  await tick();
+  assert.equal(drained, false);
+  a.resolve();
+  await first;
+  await tick();
+  assert.equal(drained, false);
+  b.resolve();
+  await second;
+  await drainPromise;
+  assert.equal(drained, true);
+  assert.deepEqual(events, ["A", "C", "A-end", "B", "B-end"]);
+});
+
+test("drain: cola vacia resuelve inmediatamente", async () => {
+  const q = harness();
+  assert.equal(q.size(), 0);
+  await q.drain(); // no cuelga
+});
+
+test("drain: no rechaza aunque los trabajos encolados fallen", async () => {
+  const q = harness();
+  const failing = q.run("00001", () => Promise.reject(new Error("boom")));
+  const okWork = q.run("00002", () => "ok");
+  await assert.rejects(failing, /boom/);
+  await okWork;
+  await q.drain(); // debe resolver, no propagar el fallo del primero
 });

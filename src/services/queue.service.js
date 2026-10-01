@@ -36,4 +36,14 @@ async function runInstrumented(phone, fn) {
   }
 }
 
-module.exports = { processInOrder };
+// [ByClaude] (BRIEF-032) Permite al handler SIGTERM esperar a que la
+// cola FIFO por telefono termine antes de cerrar el pool de Postgres.
+// Snapshot sincronico: nuevos encolados post-snapshot NO entran al wait
+// porque server.close() ya rechazo nuevas requests antes de llamar drain.
+async function drain() {
+  const snapshot = [...inflight.values()];
+  if (snapshot.length === 0) return;
+  await Promise.all(snapshot.map(p => p.catch(() => {})));
+}
+
+module.exports = { processInOrder, drain };

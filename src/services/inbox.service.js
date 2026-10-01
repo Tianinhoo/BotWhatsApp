@@ -88,6 +88,12 @@ function createInbox(pool, { enqueue = processInOrder, every = setInterval, log 
       tick();
     }
   }
-  return { start, receive, recover };
+  // [ByClaude] (BRIEF-032) Detiene el loop de recovery para shutdown limpio.
+  // Devuelve la recovery pendiente (si hay) para que el llamador la espere.
+  function stop() {
+    if (timer) { clearInterval(timer); timer = null; }
+    return recovery || Promise.resolve();
+  }
+  return { start, receive, recover, stop };
 }
 module.exports = { createInbox };

@@ -7,14 +7,19 @@ const vm = require("node:vm");
 // [ByCodex] (BRIEF-026) Overrides para integrar cola y motor reales sin red.
 function appHarness({ env = { NODE_ENV: "test" }, query, listenCalls = [], overrides = {} } = {}) {
   const routes = new Map();
-  const logs = [], calls = [], queries = [], timers = [];
+  const logs = [], calls = [], queries = [], timers = [], signalHandlers = {};
   let jsonOptions, inboxStore;
   let now = 0;
   const app = {
     use() {},
     get(path, ...handlers) { routes.set(`GET ${path}`, handlers); },
     post(path, ...handlers) { routes.set(`POST ${path}`, handlers); },
-    listen(port) { listenCalls.push(port); }
+    // [ByClaude] (BRIEF-032) listen retorna server stub con .close(cb) para shutdown handler.
+    // No ejecutamos el callback de arranque: los tests no esperan sus logs.
+    listen(port) {
+      listenCalls.push(port);
+      return { close(done) { if (typeof done === "function") done(); } };
+    }
   };
   const express = Object.assign(() => app, {
     json(options) { jsonOptions = options; return () => {}; }
@@ -73,7 +78,9 @@ function appHarness({ env = { NODE_ENV: "test" }, query, listenCalls = [], overr
       }
       return dependencies[name];
     },
-    process: { env: { ...env } },
+    // [ByClaude] (BRIEF-032) process.on captura handlers de SIGTERM/SIGINT en signalHandlers,
+    // separado de listenCalls para no romper tests que esperan listenCalls === [port].
+    process: { env: { ...env }, on(signal, handler) { signalHandlers[signal] = handler; } },
     Buffer,
     Date: class extends Date { static now() { return now; } },
     setTimeout(callback, delay) {
@@ -124,7 +131,7 @@ function appHarness({ env = { NODE_ENV: "test" }, query, listenCalls = [], overr
     await Promise.resolve();
   }
 
-  return { logs, calls, queries, timers, listenCalls, advance, get inbox() { return inboxStore; },
+  return { logs, calls, queries, timers, listenCalls, signalHandlers, advance, get inbox() { return inboxStore; },
     webhook: (rawBody, headers) => dispatch("POST", "/webhook", rawBody, headers),
     health: () => dispatch("GET", "/health") };
 }
