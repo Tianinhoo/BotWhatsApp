@@ -332,9 +332,11 @@ test("getUserState usa ORGANIC para cliente nuevo o estado vacío", async () => 
   }
 });
 
-test("getUserState documenta el fallback actual a ORGANIC si falla la lectura", async () => {
-  const f = fixture({ query: async () => { throw new Error("Lectura fallida"); } });
-  assert.equal(await f.state.getUserState(PHONE), "ORGANIC");
+// [ByCodex] (BRIEF-029) El error original debe detener al llamador.
+test("getUserState propaga el error de lectura sin asumir ORGANIC", async () => {
+  const error = new Error("Lectura fallida");
+  const f = fixture({ query: async () => { throw error; } });
+  await assert.rejects(f.state.getUserState(PHONE), failure => failure === error);
   assert.ok(f.logs.some(log => log.level === "error" && /Lectura fallida/.test(log.text)));
 });
 

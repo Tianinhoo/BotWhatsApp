@@ -118,3 +118,77 @@ test("webhook: duplicado concurrente reserva una vez y solo genera un handoff", 
   assert.equal(h.motor.sent.length, 1);
   assert.equal(h.motor.summaries.length, 1);
 });
+
+// [ByCodex] (BRIEF-029) Motor real: BD no disponible no despierta una pausa humana.
+test("lectura de estado fallida no envia ni modifica estado o resumen", async () => {
+  const motor = fixture({ query: async (sql) => {
+    if (/SELECT estado_conversacion/.test(sql)) throw new Error("read unavailable");
+    return { rows: [] };
+  } });
+  const app = appHarness({ overrides: { "./services/state.service": motor.state } });
+  await app.webhook(body("wamid.state-fail", "1"));
+  assert.equal(motor.sent.length, 0);
+  assert.equal(motor.transitions().length, 0);
+  assert.equal(motor.summaries.length, 0);
+  assert.ok(app.logs.some(log => log.level === "error"));
+});
+
+// [ByCodex] (BRIEF-028) Lotes reales con todos los niveles y contactos por telefono.
+test("webhook recorre entries/changes/messages y conserva cada contacto", async () => {
+  const h = integration();
+  const message = (id, from) => ({ id, from, type: "text", text: { body: "6" } });
+  const payload = { entry: [
+    { changes: [{ value: {
+      contacts: [{ wa_id: "00000000002", referral: { source_id: "ad-B" } },
+                 { wa_id: "00000000001", referral: { source_id: "ad-A" } }],
+      messages: [message("batch-a", "00000000001"), message("batch-b", "00000000002")]
+    } }, { value: { messages: [message("batch-c", "00000000003")] } }] },
+    { changes: [{ value: { statuses: [{ id: "delivery" }] } },
+                { value: { messages: [message("batch-d", "00000000004")] } }] }
+  ] };
+  const response = await h.app.webhook(Buffer.from(JSON.stringify(payload)));
+  assert.deepEqual(h.claims, ["batch-a", "batch-b", "batch-c", "batch-d"]);
+  assert.equal(h.incoming.length, 4);
+  assert.equal(h.motor.summaries.length, 4);
+  assert.equal(response.writes, 1);
+  const traffic = h.motor.queries.filter(q => /INSERT INTO trafico_clientes/.test(q.sql));
+  assert.ok(JSON.stringify(traffic.find(q => q.params[0] === "00000000001").params).includes("ad-A"));
+  assert.ok(JSON.stringify(traffic.find(q => q.params[0] === "00000000002").params).includes("ad-B"));
+});
+
+test("lote: fallo de un mensaje no descarta el siguiente del mismo telefono", async () => {
+  const h = integration({ claim: async id => { if (id === "bad") throw new Error("db fail"); return true; } });
+  const payload = JSON.parse(body("bad", "1").toString());
+  payload.entry[0].changes[0].value.messages.push({ id: "good", from: "00000001234", type: "text", text: { body: "6" } });
+  await h.app.webhook(Buffer.from(JSON.stringify(payload)));
+  assert.deepEqual(h.claims, ["bad", "good"]);
+  assert.equal(h.states.get("00000001234"), "PAUSED_HUMAN");
+  assert.equal(h.motor.summaries.length, 1);
+});
+
+test("lote: telefono distinto avanza mientras el primero espera", async () => {
+  const gate = deferred(), entered = deferred(), other = deferred();
+  const h = integration({ claim: async (id) => {
+    if (id === "slow") { entered.resolve(); await gate.promise; }
+    if (id === "other") other.resolve();
+    return true;
+  } });
+  const payload = JSON.parse(body("slow", "1", "00000000001").toString());
+  payload.entry[0].changes[0].value.messages.push({ id: "other", from: "00000000002", type: "text", text: { body: "6" } });
+  const running = h.app.webhook(Buffer.from(JSON.stringify(payload)));
+  try {
+    await entered.promise; await other.promise; await tick();
+    assert.equal(h.states.get("00000000002"), "PAUSED_HUMAN");
+    assert.equal(h.states.has("00000000001"), false);
+  } finally { gate.resolve(); await running; }
+});
+
+test("webhook de estados o estructura incompleta no genera respuestas", async () => {
+  const h = integration();
+  for (const payload of [null, {}, { entry: {} }, { entry: [null, { changes: [null, { value: { messages: {}, statuses: [{}] } }] }] }]) {
+    const r = await h.app.webhook(Buffer.from(JSON.stringify(payload)));
+    assert.equal(r.status, 200);
+  }
+  assert.equal(h.claims.length, 0);
+  assert.equal(h.motor.sent.length, 0);
+});

@@ -199,35 +199,28 @@ async function saveIncomingMessage(phone, message, rawText) {
 // RECEPCIÓN DE MENSAJES DE WHATSAPP
 // ======================================================
 
-app.post("/webhook", verifyMetaSignature, async (req, res) => {
-
-  // Respondemos inmediatamente a Meta.
-  // El procesamiento continúa después.
-  res.sendStatus(200);
-
-
-  try {
-
-    const value =
-      req.body.entry?.[0]
-        ?.changes?.[0]
-        ?.value;
-
-
-    const message =
-      value?.messages?.[0];
-
-
-    // Algunos webhooks son estados de mensajes
-    // y no contienen mensajes entrantes.
-    if (!message) {
-      return;
+// [ByCodex] (BRIEF-028) Un turno independiente por mensaje; todos los niveles del lote.
+function collectIncoming(body) {
+  const items = [];
+  for (const entry of Array.isArray(body?.entry) ? body.entry : []) {
+    for (const change of Array.isArray(entry?.changes) ? entry.changes : []) {
+      const value = change?.value;
+      for (const message of Array.isArray(value?.messages) ? value.messages : []) {
+        if (message && typeof message.from === "string" && message.from) {
+          items.push({ value, message });
+        }
+      }
     }
+  }
+  return items;
+}
 
+// [ByCodex] (BRIEF-028) El error de un mensaje no descarta sus hermanos.
+async function processIncoming(value, message) {
     // [ByCodex] (BRIEF-026) Encolar antes de dedup: una consulta lenta no
     // reordena mensajes. La cola conserva el turno hasta terminar realmente.
     const phone = message.from;
-    await processInOrder(phone, async () => {
+    return processInOrder(phone, async () => {
       // [ByCodex] (BRIEF-002: solo el primer INSERT procesa este wamid).
       // Se ejecuta antes de logs, tráfico, historial, estado o respuestas.
       // Sin id conservamos el flujo anterior para simuladores locales.
@@ -265,7 +258,9 @@ app.post("/webhook", verifyMetaSignature, async (req, res) => {
       // el mensaje.
       const referral =
         message.referral ||
-        value?.contacts?.[0]?.referral ||
+        (Array.isArray(value?.contacts)
+          ? value.contacts.find(contact => contact?.wa_id === phone)?.referral
+          : null) ||
         null;
 
       const origenTrafico =
@@ -349,19 +344,16 @@ app.post("/webhook", verifyMetaSignature, async (req, res) => {
       });
 
     });
+}
 
-  } catch (error) {
-
-    // [ByOpenCode] (BRIEF-006) CUIDADO → safeError: descarta
-    // error.config (podría traer el Bearer token) y solo conserva
-    // message + body de la respuesta truncado.
-    console.error(
-      "Error procesando webhook:",
-      safeError(error)
-    );
-
-  }
-
+app.post("/webhook", verifyMetaSignature, async (req, res) => {
+  // [ByCodex] Recepcion durable antes del 200: pendiente de BRIEF-027.
+  res.sendStatus(200);
+  await Promise.all(collectIncoming(req.body).map(({ value, message }) =>
+    processIncoming(value, message).catch(error => {
+      console.error("Error procesando webhook:", safeError(error));
+    })
+  ));
 });
 
 

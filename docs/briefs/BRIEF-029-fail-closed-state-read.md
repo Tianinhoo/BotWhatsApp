@@ -1,7 +1,7 @@
 # BRIEF-029 — Fail-closed cuando no se puede leer el estado (stub)
 
-- **Dueño:** por asignar
-- **Estado:** TODO (stub)
+- **Dueño:** Codex
+- **Estado:** HECHO local (2026-10-01)
 - **Prioridad:** P0 pre-Fase 0 (ronda 2)
 - **Creado:** 2026-09-30
 - **Resuelve:** requisito del plan V1 *"Detener el procesamiento cuando
@@ -37,3 +37,11 @@ debe cambiar — solo el **error** debe detener.
 
 Mejor si BRIEF-027 (compensación) está primero, para que los mensajes
 no procesados por fail-closed se re-encolen automáticamente.
+
+## Implementación — [ByCodex] 2026-10-01
+
+getUserState propaga el error original. Cliente inexistente conserva ORGANIC.
+Regresión del motor y webhook real: no envía, no cambia estado, no crea resumen
+ante fallo SELECT. npm test en Node 24: 156 aprobadas, 6 omitidas, 0 fallidas.
+La recuperación del mensaje depende de 027: el 200 temprano sigue pendiente.
+Se adelanta esta corrección independiente mientras GitHub/runtime se verifican.

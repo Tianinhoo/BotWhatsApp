@@ -1,7 +1,7 @@
 # BRIEF-028 — Iterar todos los `entry.changes` y `value.messages` (stub)
 
-- **Dueño:** por asignar
-- **Estado:** TODO (stub)
+- **Dueño:** Codex
+- **Estado:** HECHO local (2026-10-01)
 - **Prioridad:** P0 pre-Fase 0 (ronda 2)
 - **Creado:** 2026-09-30
 - **Resuelve:** A4 del `../auditoria/02-Escaner-Vulnerabilidades.md` +
@@ -22,10 +22,17 @@ silenciosamente todos menos el primero.
 - Iterar `for (const message of change.value.messages || [])`.
 - Cada `message` entra a su propio `processInOrder(phone, ...)` (que
   BRIEF-026 provee).
-- También procesar `change.value.statuses` (BRIEF-029 lo cubre más
-  explícitamente — aquí solo iterar).
+- Eventos de statuses sin mensajes se reconocen sin generar respuestas. Actualizar
+  estados de entrega es trabajo separado; BRIEF-029 trata lectura de estado.
 
 ## Dependencia
 
 Requiere BRIEF-026 cerrado antes (cada mensaje individualizado se encola
 por su propio teléfono).
+
+## Resultado — [ByCodex]
+
+Todos los niveles del lote se encolan antes de esperar; clientes distintos avanzan
+en paralelo. Un fallo no descarta hermanos. Contactos se asocian por wa_id, no por
+posición. Estructuras vacías y eventos de entrega no activan el bot.
+Suite Node 22.23.3: 166 casos, 160 aprobadas, 6 omitidas, 0 fallidas.

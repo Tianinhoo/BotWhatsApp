@@ -297,8 +297,8 @@ async function getTraffic(phone) {
 
 // [ByClaude] Devuelve el estado actual del cliente. Si el cliente aún no
 // existe en "clientes_whatsapp" o no tiene estado guardado, se considera
-// ORGANIC (primer contacto). Nunca lanza excepción: ante un fallo de BD
-// devolvemos ORGANIC para no bloquear la conversación.
+// ORGANIC (primer contacto).
+// [ByCodex] (BRIEF-029) Un error de BD se propaga: no inventar el estado.
 async function getUserState(phone) {
 
   try {
@@ -323,11 +323,11 @@ async function getUserState(phone) {
 
     // [ByOpenCode] (BRIEF-006) REDACT teléfono + safeError.
     console.error(
-      `[ByClaude] Error leyendo estado de ${redactPhone(phone)}, asumo ORGANIC:`,
+      `[ByCodex] Error leyendo estado de ${redactPhone(phone)}; procesamiento detenido:`,
       safeError(error)
     );
 
-    return STATES.ORGANIC;
+    throw error;
   }
 }
 
