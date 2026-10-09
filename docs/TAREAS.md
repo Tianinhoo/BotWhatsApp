@@ -78,7 +78,7 @@ Estos bloquean la Fase 0. Se hicieron visibles tras la auditoría externa del 20
 
 | ID | Título | Dueño | Estado | Notas |
 |---|---|---|---|---|
-| BRIEF-025 | Selección de prenda persistente + sub-estado post-catálogo | Claude (orquesta) + Codex | HECHO LOCAL | [ByClaude] 2026-10-09: 025-A + 025-B (migración 010, selección lista/ordinal/"modelo N", rutas 3/4/6 con prenda, resumen con prenda real, limpieza al reactivar). 210 pass/0 fail/9 skip; PG 219/219 — en Node 24, falta repetir en Node 22 y probar en WhatsApp real. 011 fuera de alcance. |
+| BRIEF-025 | Selección de prenda persistente + sub-estado post-catálogo | Claude (orquesta) + Codex | HECHO LOCAL | [ByClaude] 2026-10-09: 025-A + 025-B (migración 010, selección lista/ordinal/"modelo N", rutas 3/4/6 con prenda, resumen con prenda real, limpieza al reactivar). Node 22.23.3: 216 pass/0 fail/9 skip; con PG 225/225 (incluye audit:data). Commit d9f36f7 en rama `brief-025-seleccion-prenda`. Falta probar en WhatsApp real. 011 fuera de alcance. |
 
 ## P2 — Post-deploy (arrancan cuando Fase 2 esté verde)
 
