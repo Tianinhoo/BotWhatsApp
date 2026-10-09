@@ -12,6 +12,7 @@ function assertProcessed(fixture) {
     { name: "registerTraffic", args: ["00000001234", "organico", null] },
     { name: "saveMessage", args: ["00000001234", "cliente", "hola"] },
     { name: "getUserState", args: ["00000001234"] },
+    { name: "getSelectionContext", args: ["00000001234"] },
     { name: "greetAndShowMenu", args: ["00000001234"] }
   ]);
   assert.equal(fixture.logs.some(log => log.level === "error"), false);

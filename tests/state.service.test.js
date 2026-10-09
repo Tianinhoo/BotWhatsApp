@@ -14,10 +14,11 @@ const ROUTES = [
   { id: "contacto", action: "contact_sent", state: "MENU", types: ["text"] }
 ];
 
-test("STATES define los cuatro estados persistidos y no permite mutarlos", () => {
+test("STATES define los cinco estados persistidos y no permite mutarlos", () => {
   const { state } = fixture();
   assert.deepEqual({ ...state.STATES }, {
-    ORGANIC: "ORGANIC", MENU: "MENU", CATALOG: "CATALOG", PAUSED_HUMAN: "PAUSED_HUMAN"
+    ORGANIC: "ORGANIC", MENU: "MENU", CATALOG: "CATALOG", PAUSED_HUMAN: "PAUSED_HUMAN",
+    WAITING_PRODUCT_SELECTION: "WAITING_PRODUCT_SELECTION"
   });
   assert.equal(Object.isFrozen(state.STATES), true);
 });
@@ -114,7 +115,8 @@ for (const [index, route] of ROUTES.entries()) {
     assert.deepEqual(f.transitions(), [[PHONE, route.state]]);
     assert.deepEqual(f.recorded, f.sent.map(call => ({ phone: PHONE,
       content: call.type === "image" ? `[Imagen: ${call.caption}]` : call.text })));
-    const transitionIndex = f.events.findIndex(event => event.type === "query");
+    const transitionIndex = f.events.findIndex(event => event.type === "query" &&
+      /INSERT INTO clientes_whatsapp/.test(event.sql));
     assert.ok(transitionIndex > f.events.findLastIndex(event => ["text", "image"].includes(event.type)));
     if (index < 2) {
       assert.deepEqual(f.sent.filter(call => call.type === "image").map(call => [call.imageId, call.caption]), [
@@ -316,7 +318,7 @@ test("fallar saludo, hint o menú no permite avanzar a MENU", async () => {
 });
 
 test("getUserState recupera cada estado usando teléfono normalizado y consulta parametrizada", async () => {
-  for (const current of ["ORGANIC", "MENU", "CATALOG", "PAUSED_HUMAN"]) {
+  for (const current of ["ORGANIC", "MENU", "CATALOG", "PAUSED_HUMAN", "WAITING_PRODUCT_SELECTION"]) {
     const f = fixture({ query: async () => ({ rows: [{ estado_conversacion: current }] }) });
     assert.equal(await f.state.getUserState(Number(PHONE)), current);
     assert.deepEqual(f.queries[0].params, [PHONE]);
@@ -340,12 +342,13 @@ test("getUserState propaga el error de lectura sin asumir ORGANIC", async () => 
   assert.ok(f.logs.some(log => log.level === "error" && /Lectura fallida/.test(log.text)));
 });
 
-test("setUserState persiste los cuatro estados por UPSERT con parámetros", async () => {
+test("setUserState persiste los cinco estados por UPSERT con parámetros", async () => {
   const f = fixture();
-  for (const current of ["ORGANIC", "MENU", "CATALOG", "PAUSED_HUMAN"]) {
+  for (const current of ["ORGANIC", "MENU", "CATALOG", "PAUSED_HUMAN", "WAITING_PRODUCT_SELECTION"]) {
     await f.state.setUserState(Number(PHONE), current);
   }
-  assert.deepEqual(f.transitions(), ["ORGANIC", "MENU", "CATALOG", "PAUSED_HUMAN"].map(current => [PHONE, current]));
+  assert.deepEqual(f.transitions(), ["ORGANIC", "MENU", "CATALOG", "PAUSED_HUMAN", "WAITING_PRODUCT_SELECTION"]
+    .map(current => [PHONE, current]));
   assert.ok(f.queries.every(call => /ON CONFLICT \(telefono\) DO UPDATE/.test(call.sql)));
 });
 

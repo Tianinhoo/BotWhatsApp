@@ -30,6 +30,8 @@ function fixture({ query = async () => ({ rows: [] }), catalogReceived = false,
     "./whatsapp.service": {
       sendTextMessage: (phone, text) => send("text", phone, { text }),
       sendImageMessage: (phone, imageId, caption) => send("image", phone, { imageId, caption }),
+      sendListMessage: options => send("list", options.to, options),
+      sendButtonMessage: options => send("buttons", options.to, options),
       sendMainMenu: phone => send("menu", phone)
     },
     "./outbound.service": { async sendAndRecord(phone, content, callback) {

@@ -12,11 +12,12 @@
 //    - Contenido ORIGINAL de OpenCode, conservado íntegro.
 //
 // 2) ESTADO CONVERSACIONAL + ÁRBOL V1 — [ByClaude]
-//    - Cada cliente vive en uno de estos 4 estados:
+//    - Cada cliente vive en uno de estos 5 estados:
 //        ORGANIC       → primer contacto, aún no se le mostró el menú.
 //        MENU          → se le mostró el menú y esperamos una opción (1..7).
 //        CATALOG       → acaba de recibir el catálogo, sigue en menú.
 //        PAUSED_HUMAN  → derivado a asesor humano, el bot NO responde.
+//        WAITING_PRODUCT_SELECTION → eligiendo una prenda mostrada.
 //    - Persiste en la columna "estado_conversacion" de "clientes_whatsapp"
 //      (creada por sql/estados.sql).
 //    - Expone processMenuOption(phone, seleccion) para ejecutar la ruta
@@ -35,6 +36,8 @@ const { sendAndRecord } = require("./outbound.service");
 const {
   sendTextMessage,
   sendImageMessage,
+  sendListMessage,
+  sendButtonMessage,
   sendMainMenu
 } = require("./whatsapp.service");
 
@@ -71,11 +74,20 @@ const business = require("../config/business");
 // [ByClaude] Estados posibles del cliente en el Piloto V1.
 // Se exportan como constantes para evitar strings mágicos en app.js.
 const STATES = Object.freeze({
-  ORGANIC:      "ORGANIC",       // primer contacto, sin menú aún
-  MENU:         "MENU",          // esperando que elija una opción 1..7
-  CATALOG:      "CATALOG",       // ya recibió el catálogo, sigue en menú
-  PAUSED_HUMAN: "PAUSED_HUMAN"   // derivado a asesor humano (bot en pausa)
+  ORGANIC:                  "ORGANIC",                  // primer contacto, sin menú aún
+  MENU:                     "MENU",                     // esperando que elija una opción 1..7
+  CATALOG:                  "CATALOG",                  // ya recibió el catálogo, sigue en menú
+  PAUSED_HUMAN:             "PAUSED_HUMAN",             // derivado a asesor humano (bot en pausa)
+  WAITING_PRODUCT_SELECTION: "WAITING_PRODUCT_SELECTION" // esperando una prenda del último catálogo
 });
+
+// [ByCodex] (BRIEF-025) Orden canónico compartido por imágenes y productos.
+const CATALOG_IMAGE_KEYS = Object.freeze([
+  "IMAGE_MODELO_1",
+  "IMAGE_MODELO_2",
+  "IMAGE_MODELO_3",
+  "IMAGE_OFERTA_DIA"
+]);
 
 
 // ======================================================
@@ -332,9 +344,107 @@ async function getUserState(phone) {
 }
 
 
+// [ByCodex] (BRIEF-025) Lee la prenda elegida y la lista ordinal sin
+// convertir un fallo de BD en contexto vacío.
+async function getSelectionContext(phone) {
+  const result = await pool.query(
+    `
+      SELECT prenda_seleccionada_id, last_shown_products
+      FROM clientes_whatsapp
+      WHERE telefono = $1
+      LIMIT 1
+    `,
+    [String(phone)]
+  );
+
+  if (result.rows.length === 0) {
+    return { prendaId: null, lastShown: [] };
+  }
+
+  const row = result.rows[0];
+  return {
+    prendaId: row.prenda_seleccionada_id == null
+      ? null
+      : Number(row.prenda_seleccionada_id),
+    lastShown: Array.isArray(row.last_shown_products)
+      ? row.last_shown_products.map(Number).filter(Number.isInteger)
+      : []
+  };
+}
+
+
+// [ByCodex] (BRIEF-025) Una lectura para la prenda y sus variaciones.
+// DISTINCT/FILTER evitan duplicados y nulos del LEFT JOIN; las tallas
+// siguen su escala habitual (S antes de M), y el resto el orden textual.
+async function loadSelectedProduct(phone) {
+  const result = await pool.query(
+    `
+      WITH selected AS (
+        SELECT p.id, p.nombre, p.precio, p.disponible,
+          COALESCE(
+            array_agg(DISTINCT v.talla ORDER BY v.talla)
+              FILTER (WHERE v.talla IS NOT NULL),
+            '{}'::text[]
+          ) AS tallas,
+          COALESCE(
+            array_agg(DISTINCT v.color ORDER BY v.color)
+              FILTER (WHERE v.color IS NOT NULL),
+            '{}'::text[]
+          ) AS colores
+        FROM clientes_whatsapp c
+        JOIN productos p ON p.id = c.prenda_seleccionada_id
+        LEFT JOIN producto_variaciones v ON v.producto_id = p.id
+        WHERE c.telefono = $1
+        GROUP BY p.id
+      )
+      SELECT id, nombre, precio, disponible,
+        ARRAY(
+          SELECT talla FROM unnest(tallas) AS talla
+          ORDER BY array_position(
+            ARRAY['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'], talla
+          ), talla
+        ) AS tallas,
+        colores
+      FROM selected
+    `,
+    [String(phone)]
+  );
+
+  const row = result.rows[0];
+  if (!row) return null;
+
+  return {
+    id: Number(row.id),
+    nombre: row.nombre,
+    precio: row.precio == null ? null : Number(row.precio),
+    disponible: row.disponible,
+    tallas: row.tallas || [],
+    colores: row.colores || []
+  };
+}
+
+
+// [ByCodex] (BRIEF-025) La lista sigue el mismo orden que las imágenes y
+// no oculta filas por `disponible`: disponibilidad se trata en otra ruta.
+async function loadCatalogProducts() {
+  const result = await pool.query(
+    `
+      SELECT id, nombre
+      FROM productos
+      WHERE imagen_key = ANY($1)
+      ORDER BY array_position($1::text[], imagen_key)
+      LIMIT 9
+    `,
+    [CATALOG_IMAGE_KEYS]
+  );
+
+  return result.rows.map(row => ({ id: Number(row.id), nombre: row.nombre }));
+}
+
+
 // [ByClaude] Persiste el nuevo estado del cliente. Si no existe la fila
 // aún, la crea con INSERT ... ON CONFLICT para mantener la tabla consistente.
-// Valida que el estado sea uno de los 4 permitidos por STATES.
+// Valida que el estado sea uno de los permitidos por STATES.
 async function setUserState(phone, state) {
 
   if (!Object.values(STATES).includes(state)) {
@@ -366,7 +476,25 @@ async function setUserState(phone, state) {
 // desde el dashboard cuando un asesor humano quiere devolver el control
 // al árbol conversacional automático. Vuelve al estado MENU.
 async function resumeBotForClient(phone) {
-  await setUserState(phone, STATES.MENU);
+  // [ByCodex] (BRIEF-025) Reiniciar estado y selección en una sola escritura.
+  await pool.query(
+    `
+      INSERT INTO clientes_whatsapp (
+        telefono,
+        estado_conversacion,
+        prenda_seleccionada_id,
+        last_shown_products,
+        created_at,
+        updated_at
+      ) VALUES ($1, $2, NULL, '{}', now(), now())
+      ON CONFLICT (telefono) DO UPDATE
+        SET estado_conversacion = EXCLUDED.estado_conversacion,
+            prenda_seleccionada_id = NULL,
+            last_shown_products = '{}',
+            updated_at = now()
+    `,
+    [String(phone), STATES.MENU]
+  );
 }
 
 
@@ -398,6 +526,45 @@ function extractSelection(message) {
 
   if (message.text?.body) {
     return message.text.body;
+  }
+
+  return null;
+}
+
+
+// [ByCodex] (BRIEF-025) Parser puro y contextual para la prenda. Los IDs
+// interactivos se validan contra la última lista realmente mostrada.
+function resolveProductSelection(message, state, ctx) {
+  const lastShown = Array.isArray(ctx?.lastShown) ? ctx.lastShown : [];
+  if (lastShown.length === 0) return null;
+
+  const interactive = message?.interactive;
+  const interactiveId = interactive?.type === "list_reply"
+    ? interactive.list_reply?.id
+    : interactive?.type === "button_reply"
+      ? interactive.button_reply?.id
+      : null;
+
+  const productMatch = typeof interactiveId === "string"
+    ? interactiveId.match(/^producto:(\d+)$/)
+    : null;
+  if (productMatch) {
+    const productId = Number(productMatch[1]);
+    return lastShown.includes(productId)
+      ? { kind: "product", productId }
+      : { kind: "invalid" };
+  }
+
+  const text = message?.text?.body;
+  if (typeof text !== "string") return null;
+
+  if (state === STATES.WAITING_PRODUCT_SELECTION && /^\s*[1-9]\s*$/.test(text)) {
+    return { kind: "ordinal", index: Number(text.trim()) - 1 };
+  }
+
+  const modelMatch = text.match(/\bmodelo\s*([1-3])\b/i);
+  if (modelMatch) {
+    return { kind: "model_key", imageKey: `IMAGE_MODELO_${modelMatch[1]}` };
   }
 
   return null;
@@ -458,6 +625,141 @@ async function sendAndLog(phone, text) {
 }
 
 
+// [ByCodex] (BRIEF-025) Envía la lista y recién después persiste el
+// contexto ordinal que la clienta efectivamente pudo ver.
+async function sendProductList(phone, products, { hint = null } = {}) {
+  if (hint) {
+    await sendAndLog(phone, hint);
+  }
+
+  const rows = products.map(product => ({
+    id: `producto:${product.id}`,
+    title: String(product.nombre || `Prenda ${product.id}`).slice(0, 24)
+  }));
+  rows.push({ id: "asesor", title: "Hablar con asesora" });
+
+  // [ByClaude] (BRIEF-025) Revisión: el outro anterior indicaba cómo salir; se conserva.
+  const body =
+    "Elegí la prenda que te interesa o escribí su número 👇\n\n" +
+    "Escribí *menú* para volver al menú principal.";
+  await sendAndRecord(phone, body, () => sendListMessage({
+    to: phone,
+    header: "¿Qué prenda te interesa?",
+    body,
+    footer: "Cecilia Tedin · Selección de prenda",
+    buttonText: "Ver prendas",
+    sections: [{ title: "Prendas", rows }]
+  }));
+
+  await pool.query(
+    `
+      INSERT INTO clientes_whatsapp (
+        telefono,
+        estado_conversacion,
+        last_shown_products,
+        created_at,
+        updated_at
+      ) VALUES ($1, $2, $3, now(), now())
+      ON CONFLICT (telefono) DO UPDATE
+        SET estado_conversacion = EXCLUDED.estado_conversacion,
+            last_shown_products = EXCLUDED.last_shown_products,
+            updated_at = now()
+    `,
+    [String(phone), STATES.WAITING_PRODUCT_SELECTION, products.map(product => product.id)]
+  );
+}
+
+
+// [ByCodex] (BRIEF-025) Reutilizable para entradas inválidas y fallbacks.
+async function showProductList(phone, { hint = null } = {}) {
+  const products = await loadCatalogProducts();
+  if (products.length === 0) {
+    await showMenu(phone, { hint });
+    return;
+  }
+  await sendProductList(phone, products, { hint });
+}
+
+
+// [ByCodex] (BRIEF-025) Confirma una selección con acciones cortas. El
+// UPDATE queda deliberadamente después del envío exitoso de botones.
+async function selectProduct(phone, productId, prevId) {
+  const result = await pool.query(
+    `SELECT id, nombre FROM productos WHERE id = $1 LIMIT 1`,
+    [productId]
+  );
+  const product = result.rows[0];
+  if (!product) {
+    await showProductList(phone, {
+      hint: "Esa prenda ya no está en la lista. Elegí otra opción 👇"
+    });
+    return;
+  }
+
+  const changed = prevId != null && Number(prevId) !== Number(productId);
+  const body = changed
+    ? `Cambié a *${product.nombre}*. ¿Qué querés consultar?`
+    : `Elegiste *${product.nombre}*. ¿Qué querés consultar?`;
+
+  await sendAndRecord(phone, body, () => sendButtonMessage({
+    to: phone,
+    body,
+    buttons: [
+      { id: "precios_tallas", title: "Precio y tallas" },
+      { id: "stock", title: "Disponibilidad" },
+      { id: "asesor", title: "Hablar con asesora" }
+    ]
+  }));
+
+  await pool.query(
+    `
+      INSERT INTO clientes_whatsapp (
+        telefono,
+        prenda_seleccionada_id,
+        estado_conversacion,
+        created_at,
+        updated_at
+      ) VALUES ($1, $2, $3, now(), now())
+      ON CONFLICT (telefono) DO UPDATE
+        SET prenda_seleccionada_id = EXCLUDED.prenda_seleccionada_id,
+            estado_conversacion = EXCLUDED.estado_conversacion,
+            updated_at = now()
+    `,
+    [String(phone), Number(productId), STATES.MENU]
+  );
+}
+
+
+// [ByCodex] (BRIEF-025) Resuelve ordinales y claves visuales contra el
+// contexto mostrado; cualquier valor stale reabre una lista vigente.
+async function handleProductPick(phone, pick, ctx) {
+  const lastShown = Array.isArray(ctx?.lastShown) ? ctx.lastShown : [];
+  let productId = null;
+
+  if (pick?.kind === "product") {
+    productId = pick.productId;
+  } else if (pick?.kind === "ordinal") {
+    productId = lastShown[pick.index];
+  } else if (pick?.kind === "model_key") {
+    const result = await pool.query(
+      `SELECT id FROM productos WHERE imagen_key = $1 LIMIT 1`,
+      [pick.imageKey]
+    );
+    const candidate = result.rows[0] ? Number(result.rows[0].id) : null;
+    if (candidate != null && lastShown.includes(candidate)) productId = candidate;
+  }
+
+  if (!Number.isInteger(Number(productId)) || !lastShown.includes(Number(productId))) {
+    await showProductList(phone, {
+      hint: "No pude identificar esa prenda. Elegí una de la lista 👇"
+    });
+    return;
+  }
+
+  await selectProduct(phone, Number(productId), ctx?.prendaId ?? null);
+}
+
+
 // [ByClaude] Envía las 4 imágenes del catálogo (3 modelos + oferta del día).
 // No agrega textos: el llamador decide el mensaje de intro y de outro.
 // [ByCodex] (BRIEF-011) Registrar cada imagen; un fallo detiene catálogo y transición de estado.
@@ -474,8 +776,9 @@ async function sendCatalogImages(phone) {
 }
 
 
-// [ByClaude] RUTA 1 — Catálogo completo. Envía intro + imágenes + outro
-// y deja al cliente en estado CATALOG (sigue en menú pero ya vio todo).
+// [ByClaude] RUTA 1 — Catálogo completo. Envía intro + imágenes + lista de
+// prendas y deja al cliente en WAITING_PRODUCT_SELECTION (BRIEF-025).
+// Sin productos en BD: outro + CATALOG, como antes.
 async function replyCatalog(phone, { isFirstTime = false } = {}) {
 
   const intro = isFirstTime
@@ -485,6 +788,14 @@ async function replyCatalog(phone, { isFirstTime = false } = {}) {
 
   await sendAndLog(phone, intro);
   await sendCatalogImages(phone);
+
+  await markCatalogSent(phone);
+
+  const products = await loadCatalogProducts();
+  if (products.length > 0) {
+    await sendProductList(phone, products);
+    return;
+  }
 
   // [ByClaude] (chequeo 2026-09-30 P2) Texto honesto: el bot V1 NO interpreta
   // texto libre. Antes esta ruta prometía "escribí su nombre y te ayudamos"
@@ -497,7 +808,6 @@ async function replyCatalog(phone, { isFirstTime = false } = {}) {
 
   await sendAndLog(phone, outro);
 
-  await markCatalogSent(phone);
   await setUserState(phone, STATES.CATALOG);
 }
 
@@ -513,6 +823,14 @@ async function replyNewModels(phone) {
   await sendAndLog(phone, intro);
   await sendCatalogImages(phone);
 
+  await markCatalogSent(phone);
+
+  const products = await loadCatalogProducts();
+  if (products.length > 0) {
+    await sendProductList(phone, products);
+    return;
+  }
+
   // [ByClaude] (chequeo 2026-09-30 P2) Mismo criterio que ruta 1: derivar.
   const outro =
     "Si te interesa alguno, tocá la *opción 6* del menú y una asesora te " +
@@ -521,7 +839,6 @@ async function replyNewModels(phone) {
 
   await sendAndLog(phone, outro);
 
-  await markCatalogSent(phone);
   await setUserState(phone, STATES.CATALOG);
 }
 
@@ -533,19 +850,34 @@ async function replyNewModels(phone) {
 // validados; si no, se omiten.
 async function replyPricesAndSizes(phone) {
 
-  const partes = ["📏 *Precios y tallas*", ""];
+  // [ByCodex] (BRIEF-025) Con prenda, solo publicar un precio positivo.
+  const product = await loadSelectedProduct(phone);
+  const partes = product
+    ? [`📏 *Precio y tallas — ${product.nombre}*`, ""]
+    : ["📏 *Precios y tallas*", ""];
 
-  if (business.precios?.desde && business.precios?.hasta) {
-    partes.push(`• Nuestros modelos van desde *${business.precios.desde}* hasta *${business.precios.hasta}*.`);
-  }
+  if (product) {
+    const price = product.precio > 0 ? `Bs ${product.precio.toFixed(2)}` : "Por confirmar";
+    partes.push(`• Precio: *${price}*.`);
+    partes.push(`• Tallas: *${product.tallas.length ? product.tallas.join(", ") : "Por confirmar"}*.`);
+    partes.push(`• Colores: *${product.colores.length ? product.colores.join(", ") : "Por confirmar"}*.`);
 
-  if (Array.isArray(business.tallas) && business.tallas.length > 0) {
-    partes.push(`• Contamos con tallas *${business.tallas.join(", ")}* (según modelo).`);
-  }
+    if (product.disponible === false) {
+      partes.push("• Esta prenda no está disponible por ahora.");
+    }
+  } else {
+    if (business.precios?.desde && business.precios?.hasta) {
+      partes.push(`• Nuestros modelos van desde *${business.precios.desde}* hasta *${business.precios.hasta}*.`);
+    }
 
-  // Si NO hay ningún dato confirmado, el texto queda flaco pero honesto.
-  if (partes.length === 2) {
-    partes.push("Nuestros precios y tallas dependen del modelo específico.");
+    if (Array.isArray(business.tallas) && business.tallas.length > 0) {
+      partes.push(`• Contamos con tallas *${business.tallas.join(", ")}* (según modelo).`);
+    }
+
+    // Si NO hay ningún dato confirmado, el texto queda flaco pero honesto.
+    if (partes.length === 2) {
+      partes.push("Nuestros precios y tallas dependen del modelo específico.");
+    }
   }
 
   partes.push("");
@@ -563,9 +895,11 @@ async function replyPricesAndSizes(phone) {
 // texto libre. Ahora deriva explícitamente a la opción 6 sin mentir.
 async function replyStock(phone) {
 
+  // [ByCodex] (BRIEF-025) Nombrar la prenda sin publicar cantidades.
+  const product = await loadSelectedProduct(phone);
   const text =
     "🔎 *Disponibilidad / stock*\n\n" +
-    "Para consultar stock de un modelo específico en tu talla y color, tocá la " +
+    `Para consultar stock de ${product ? `*${product.nombre}*` : "un modelo específico"} en tu talla y color, tocá la ` +
     "*opción 6* del menú y una asesora te confirma en el momento ✨\n\n" +
     "Escribí *menú* para volver al menú principal.";
 
@@ -642,6 +976,23 @@ async function replyDeriveToHuman(phone, { reason = null } = {}) {
       traffic,
       reason || "El cliente pidió hablar con un asesor (Opción 6 del menú)"
     );
+
+    // [ByCodex] (BRIEF-025) La selección persistida prevalece sobre el historial.
+    // [ByClaude] (BRIEF-025) Revisión: si falla esta lectura, guardar igual el
+    // resumen con la detección por historial en vez de perderlo entero.
+    let product = null;
+    try {
+      product = await loadSelectedProduct(phone);
+    } catch (error) {
+      console.error(
+        `[ByClaude] (BRIEF-025) Prenda no leída para el resumen de ${redactPhone(phone)}:`,
+        safeError(error)
+      );
+    }
+    summary.prenda_seleccionada_id = product ? product.id : null;
+    if (product) {
+      summary.modelo_seleccionado = product.nombre;
+    }
 
     await saveHandoffSummary(summary);
 
@@ -811,19 +1162,27 @@ module.exports = {
 
   // [ByClaude] Estado conversacional (constantes y getters/setters).
   STATES,
+  CATALOG_IMAGE_KEYS,
   MENU_OPTIONS,
   MENU_REOPEN_KEYWORDS,
   getUserState,
+  getSelectionContext,
+  loadSelectedProduct,
   setUserState,
   resumeBotForClient,
 
   // [ByClaude] Parseo de la selección del cliente.
   extractSelection,
+  resolveProductSelection,
   resolveMenuOption,
   requestedMenu,
 
   // [ByClaude] Árbol conversacional V1 (7 rutas + saludo + menú).
   processMenuOption,
+  loadCatalogProducts,
+  handleProductPick,
+  selectProduct,
   greetAndShowMenu,
-  showMenu
+  showMenu,
+  showProductList
 };

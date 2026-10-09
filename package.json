@@ -8,6 +8,7 @@
     "start": "node src/app.js",
     "init-db": "node src/init-db.js",
     "db:migrate": "node scripts/migrate.js",
+    "audit:data": "node scripts/audit-pending-data.js",
     "test": "node --test tests/*.test.js"
   },
   "_comment_test": "// [ByCodex] (BRIEF-016) npm test ejecuta regresiones locales; PostgreSQL se habilita con DEDUP_TEST_DATABASE=1.",

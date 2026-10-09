@@ -78,7 +78,7 @@ Estos bloquean la Fase 0. Se hicieron visibles tras la auditoría externa del 20
 
 | ID | Título | Dueño | Estado | Notas |
 |---|---|---|---|---|
-| BRIEF-025 | Selección de prenda persistente + sub-estado post-catálogo | por asignar | TODO | Cierra la brecha *"texto libre → menú otra vez"* del plan V1. Depende de BRIEF-026 (B1) cerrado. Incluye migración 008 que actualiza CHECK, `last_shown_products INTEGER[]` para resolver ordinales, y regla concreta de dato confirmado (precio/stock nullable). |
+| BRIEF-025 | Selección de prenda persistente + sub-estado post-catálogo | Claude (orquesta) + Codex | HECHO LOCAL | [ByClaude] 2026-10-09: 025-A + 025-B (migración 010, selección lista/ordinal/"modelo N", rutas 3/4/6 con prenda, resumen con prenda real, limpieza al reactivar). 210 pass/0 fail/9 skip; PG 219/219 — en Node 24, falta repetir en Node 22 y probar en WhatsApp real. 011 fuera de alcance. |
 
 ## P2 — Post-deploy (arrancan cuando Fase 2 esté verde)
 

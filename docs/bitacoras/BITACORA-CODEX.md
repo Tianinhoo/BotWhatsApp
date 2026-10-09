@@ -4,6 +4,20 @@ Diario personal. Entradas más recientes arriba.
 
 ---
 
+## 2026-10-01 — Plan de cierre del 30% pendiente
+
+**Qué hice:** redacté docs/PLAN-CIERRE-V1-2026-10-01.md por pedido del usuario.
+Cinco entregas con pesos orientativos, responsables propuestos y aceptación:
+conexión Meta, datos, selección de prenda, prueba con testers y despliegue/operación.
+
+**Decisiones:** mantener la primera conexión separada del recorrido completo;
+BRIEF-025 puede avanzar mientras el usuario resuelve accesos y confirma datos.
+No se asignaron tareas a otros agentes ni se modificó código, BD o configuración.
+Porcentajes de planificación, no tiempos medidos; cierre por evidencia.
+
+**Documentación a sincronizar al implementar:** referencias antiguas en 025/007
+y tablero (migración 008, orden pre-Fase 0 y pasos iniciales de Git ya realizados).
+
 ## 2026-10-01 — Recepción durable, migración y cierre de integración
 
 **Qué hice:** BRIEF-027 implementado con transacción antes del 200, duplicados sin

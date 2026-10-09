@@ -50,18 +50,26 @@ function appHarness({ env = { NODE_ENV: "test" }, query, listenCalls = [], overr
     },
     "./services/messages.service": { saveMessage: record("saveMessage") },
     "./services/state.service": {
-      STATES: { ORGANIC: "ORGANIC", PAUSED_HUMAN: "PAUSED_HUMAN" },
+      STATES: { ORGANIC: "ORGANIC", PAUSED_HUMAN: "PAUSED_HUMAN",
+        WAITING_PRODUCT_SELECTION: "WAITING_PRODUCT_SELECTION" },
       registerTraffic: record("registerTraffic"),
       async getUserState(...args) {
         calls.push({ name: "getUserState", args });
         return "ORGANIC";
       },
+      async getSelectionContext(...args) {
+        calls.push({ name: "getSelectionContext", args });
+        return { prendaId: null, lastShown: [] };
+      },
       extractSelection: message => message.text?.body || "",
+      resolveProductSelection: () => null,
       resolveMenuOption: () => null,
       requestedMenu: () => false,
       processMenuOption: record("processMenuOption"),
+      handleProductPick: record("handleProductPick"),
       greetAndShowMenu: record("greetAndShowMenu"),
-      showMenu: record("showMenu")
+      showMenu: record("showMenu"),
+      showProductList: record("showProductList")
     },
     "./services/logger.service": {
       redactPhone: phone => `***${phone.slice(-4)}`,

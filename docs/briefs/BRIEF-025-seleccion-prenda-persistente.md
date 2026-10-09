@@ -333,4 +333,18 @@ function extractSelection(message, state, cliente) {
   mostrar precios solo si confirmados, cambio de prenda explícito,
   prevenir pisado de PAUSED_HUMAN.
 
+- 2026-10-09 — [ByClaude] Decisiones de orquestación (prevalecen sobre §SÍ donde difieran):
+  1. Se parte en 025-A (selección + persistencia + parser) y 025-B (rutas 3/4/6 + resumen + limpieza al reactivar).
+  2. Migración 011 (precio/stock nullable) queda FUERA de 025: depende de la entrega 2.
+     Regla V1: precio se publica solo si `> 0`; stock numérico NUNCA se publica; resto "Por confirmar".
+  3. Ordinales planos ("2") solo en `WAITING_PRODUCT_SELECTION`. El patrón determinista
+     `modelo <N>` / `oferta` se resuelve contra `last_shown_products` en cualquier estado no pausado
+     (cubre "quiero modelo 2 talla M negro"; talla/color quedan en el historial para el resumen).
+  4. `last_shown_products` NO se limpia al seleccionar (permite cambiar de prenda); única limpieza
+     de ambas columnas: `resumeBotForClient`.
+  5. La lista se arma desde `productos` filtrando por `imagen_key` en el mismo orden de las imágenes.
+     Sin filas → comportamiento actual (outro + `CATALOG`).
+  6. §8 (catálogo pisando PAUSED_HUMAN) se considera cubierto por BRIEF-026 (cola por teléfono).
+  7. `prenda_seleccionada_id` va en el JSONB del resumen; sin columna nueva en `resumenes_atencion`.
+
 <!-- [ByCodex] 2026-10-01: 009 aplicada por BRIEF-027; selección reserva 010 y datos confirmados 011, sujetas a verificar el máximo al implementarlas. No se crearon estas migraciones aún. -->

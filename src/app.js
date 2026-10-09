@@ -14,14 +14,18 @@ const {
   // Estado conversacional
   STATES,
   getUserState,
+  getSelectionContext,
   // Parseo
   extractSelection,
+  resolveProductSelection,
   resolveMenuOption,
   requestedMenu,
   // Árbol V1
   processMenuOption,
+  handleProductPick,
   greetAndShowMenu,
-  showMenu
+  showMenu,
+  showProductList
 } = require("./services/state.service");
 
 // [ByClaude] Persistencia de mensajes entrantes para que aparezcan en el
@@ -346,6 +350,15 @@ async function processIncoming(value, message) {
         return;
       }
 
+      // [ByCodex] (BRIEF-025) La selección de prenda precede al menú:
+      // un "3" en WAITING es ordinal, no la ruta 3 del árbol principal.
+      const selectionContext = await getSelectionContext(phone);
+      const productPick = resolveProductSelection(message, state, selectionContext);
+      if (productPick) {
+        await handleProductPick(phone, productPick, selectionContext);
+        return;
+      }
+
       // Extraemos la selección del cliente (interactivo o texto).
       const rawSelection = extractSelection(message);
       const option = resolveMenuOption(rawSelection);
@@ -371,6 +384,13 @@ async function processIncoming(value, message) {
       // - Si escribió cualquier otra cosa → menú con un hint amable.
       if (requestedMenu(rawText)) {
         await showMenu(phone);
+        return;
+      }
+
+      if (state === STATES.WAITING_PRODUCT_SELECTION) {
+        await showProductList(phone, {
+          hint: "Elegí una prenda de la lista o escribí su número 👇"
+        });
         return;
       }
 
