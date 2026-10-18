@@ -9,11 +9,12 @@ const { appHarness } = require("./helpers/app-harness");
 const { buildFromContext } = require("../src/services/summary.service");
 
 const PHONE = "59170000025";
+// [ByCodex] (catalogo-v1) Las filas del catálogo incluyen media y precio.
 const PRODUCTS = [
-  { id: 11, nombre: "Modelo Uno" },
-  { id: 12, nombre: "Modelo Dos" },
-  { id: 13, nombre: "Modelo Tres" },
-  { id: 14, nombre: "Oferta del día" }
+  { id: 11, nombre: "Modelo Uno", imagen_key: "IMAGE_MODELO_1", precio: 0 },
+  { id: 12, nombre: "Modelo Dos", imagen_key: "IMAGE_MODELO_2", precio: 0 },
+  { id: 13, nombre: "Modelo Tres", imagen_key: "IMAGE_MODELO_3", precio: 0 },
+  { id: 14, nombre: "Oferta del día", imagen_key: "IMAGE_OFERTA_DIA", precio: 0 }
 ];
 
 function catalogQuery(sql, params) {
@@ -22,8 +23,7 @@ function catalogQuery(sql, params) {
     return { rows: PRODUCTS.filter(product => product.id === Number(params[0])) };
   }
   if (/SELECT id FROM productos WHERE imagen_key/.test(sql)) {
-    const index = Number(String(params[0]).slice(-1)) - 1;
-    return { rows: PRODUCTS[index] ? [{ id: PRODUCTS[index].id }] : [] };
+    return { rows: PRODUCTS.filter(product => product.imagen_key === params[0]) };
   }
   return { rows: [] };
 }
@@ -31,6 +31,144 @@ function catalogQuery(sql, params) {
 function selectionWrites(f) {
   return f.queries.filter(call => /prenda_seleccionada_id\s*=/.test(call.sql));
 }
+
+// [ByCodex] (catalogo-v1) Configuración real, sin duplicar aliases en los tests.
+const BUSINESS = require("../src/config/business");
+const REAL_PRODUCTS = PRODUCTS.map((product, index) => ({
+  ...product,
+  nombre: ["Maxi con bolsillo", "Efecto Lipo", "Figura 10", "Ultra Palazzo"][index],
+  precio: ["180.00", "160.00", "160.00", "190.00"][index]
+}));
+
+function realCatalogQuery(sql, params) {
+  if (/WHERE imagen_key = ANY/.test(sql)) return { rows: REAL_PRODUCTS };
+  if (/SELECT id FROM productos WHERE imagen_key/.test(sql))
+    return { rows: REAL_PRODUCTS.filter(product => product.imagen_key === params[0]) };
+  if (/SELECT id, nombre FROM productos WHERE id/.test(sql))
+    return { rows: REAL_PRODUCTS.filter(product => product.id === Number(params[0])) };
+  return { rows: [] };
+}
+
+test("catalogo-v1: aliases sin mayúsculas ni tildes, con prioridad del arreglo y sin catálogo previo", () => {
+  const { state } = fixture({ business: BUSINESS });
+  const cases = [
+    ["quiero el palazzo", "IMAGE_OFERTA_DIA"],
+    ["Quiero el MAXI palazzo con bolsillo", "IMAGE_MODELO_1"],
+    ["palazzo maxi", "IMAGE_MODELO_1"],
+    ["efecto lipo talla M", "IMAGE_MODELO_2"],
+    ["FIGÚRA 10", "IMAGE_MODELO_3"],
+    ["figura", "IMAGE_MODELO_3"],
+    ["ULTRA IMPACTO", "IMAGE_OFERTA_DIA"],
+    ["¡PÁLAZZO!", "IMAGE_OFERTA_DIA"],
+    ["ÉFECTO LÍPO", "IMAGE_MODELO_2"],
+    ["modelo 3", "IMAGE_MODELO_3"]
+  ];
+  for (const lastShown of [[], [11, 12, 13, 14]]) {
+    for (const [text, imageKey] of cases) {
+      const pick = state.resolveProductSelection({ text: { body: text } }, state.STATES.MENU, { lastShown });
+      assert.deepEqual({ ...pick }, { kind: "model_key", imageKey }, text);
+    }
+  }
+  for (const text of ["hola", "10", "maximal", "liposucción", "configura", "palazzos", "maxi_palazzo", "αmaxi"]) {
+    assert.equal(state.resolveProductSelection({ text: { body: text } }, state.STATES.MENU,
+      { lastShown: [11, 12, 13, 14] }), null, text);
+  }
+  assert.equal(state.resolveProductSelection({ text: { body: "2" } }, state.STATES.MENU,
+    { lastShown: [11, 12, 13, 14] }), null);
+  assert.deepEqual({ ...state.resolveProductSelection({ text: { body: "2" } },
+    state.STATES.WAITING_PRODUCT_SELECTION, { lastShown: [11, 12, 13, 14] }) },
+  { kind: "ordinal", index: 1 });
+});
+
+test("catalogo-v1: nombres y modelo N eligen una prenda validada sin lastShown", async () => {
+  for (const [text, expectedId, expectedName] of [
+    ["quiero el palazzo", 14, "Ultra Palazzo"],
+    ["Quiero el MAXI palazzo con bolsillo", 11, "Maxi con bolsillo"],
+    ["efecto lipo talla M", 12, "Efecto Lipo"],
+    ["figura 10", 13, "Figura 10"],
+    ["modelo 2", 12, "Efecto Lipo"]
+  ]) {
+    const f = fixture({ business: BUSINESS, query: realCatalogQuery });
+    const ctx = { prendaId: null, lastShown: [] };
+    const pick = f.state.resolveProductSelection({ text: { body: text } }, f.state.STATES.MENU, ctx);
+    await f.state.handleProductPick(PHONE, pick, ctx);
+    assert.match(f.sent[0].body, new RegExp(`Elegiste \\*${expectedName}\\*`));
+    assert.deepEqual(selectionWrites(f)[0].params, [PHONE, expectedId, "MENU"]);
+    assert.ok(f.queries.some(call => /WHERE imagen_key = ANY/.test(call.sql)));
+  }
+});
+
+test("catalogo-v1: webhook en MENU sin catálogo selecciona Palazzo y hola conserva el menú", async () => {
+  const f = fixture({ business: BUSINESS, query: (sql, params) => {
+    if (/SELECT estado_conversacion/.test(sql)) return { rows: [{ estado_conversacion: "MENU" }] };
+    if (/SELECT prenda_seleccionada_id/.test(sql))
+      return { rows: [{ prenda_seleccionada_id: null, last_shown_products: [] }] };
+    return realCatalogQuery(sql, params);
+  } });
+  const app = appHarness({ overrides: { "./services/state.service": f.state } });
+  for (const [index, text] of ["quiero el palazzo", "hola"].entries()) {
+    await app.webhook(Buffer.from(JSON.stringify({ entry: [{ changes: [{ value: { messages: [{
+      id: `wamid.catalogo-v1.${index}`, from: PHONE, type: "text", text: { body: text }
+    }] } }] }] })));
+  }
+  assert.deepEqual(f.sent.map(call => call.type), ["buttons", "menu"]);
+  assert.equal(f.sent[0].body, "Elegiste *Ultra Palazzo*. ¿Qué querés consultar?");
+});
+
+test("catalogo-v1: una clave fuera del catálogo o de lastShown nunca persiste selección", async () => {
+  for (const lastShown of [[], [11]]) {
+    const f = fixture({ query: (sql, params) => {
+      if (/SELECT id FROM productos WHERE imagen_key/.test(sql)) return { rows: [{ id: 999 }] };
+      return realCatalogQuery(sql, params);
+    } });
+    await f.state.handleProductPick(PHONE, { kind: "model_key", imageKey: "IMAGE_OFERTA_DIA" },
+      { prendaId: null, lastShown });
+    assert.deepEqual(f.sent.map(call => call.type), ["text", "list"]);
+    assert.equal(selectionWrites(f).length, 0);
+  }
+  const empty = fixture({ business: BUSINESS });
+  await empty.state.handleProductPick(PHONE, { kind: "model_key", imageKey: "IMAGE_OFERTA_DIA" },
+    { prendaId: null, lastShown: [] });
+  assert.deepEqual(empty.sent.map(call => call.type), ["text", "menu"]);
+  assert.equal(selectionWrites(empty).length, 0);
+});
+
+test("catalogo-v1: catálogo y novedades usan nombres, media y precios de la base en el mismo orden", async () => {
+  for (const option of ["1", "2"]) {
+    const f = fixture({ query: realCatalogQuery });
+    await f.state.processMenuOption(PHONE, option);
+    assert.deepEqual(f.sent.filter(call => call.type === "image").map(call => [call.imageId, call.caption]), [
+      ["image-1", "1. Maxi con bolsillo · 180 Bs"],
+      ["image-2", "2. Efecto Lipo · 160 Bs"],
+      ["image-3", "3. Figura 10 · 160 Bs"],
+      ["image-offer", "4. Ultra Palazzo · 190 Bs"]
+    ]);
+    assert.deepEqual(f.sent.at(-1).sections[0].rows.slice(0, 4).map(row => row.title),
+      REAL_PRODUCTS.map(product => product.nombre));
+    assert.equal(f.queries.filter(call => /WHERE imagen_key = ANY/.test(call.sql)).length, 1,
+      "Captions y lista comparten una lectura del catálogo");
+  }
+});
+
+test("catalogo-v1: captions omiten precios sin confirmar y conservan decimales positivos", async () => {
+  const products = REAL_PRODUCTS.map((product, index) => ({
+    ...product, precio: [null, "0.00", "-1.00", "190.50"][index]
+  }));
+  const f = fixture({ query: sql => ({ rows: /WHERE imagen_key = ANY/.test(sql) ? products : [] }) });
+  await f.state.processMenuOption(PHONE, "1");
+  assert.deepEqual(f.sent.filter(call => call.type === "image").map(call => call.caption), [
+    "1. Maxi con bolsillo", "2. Efecto Lipo", "3. Figura 10", "4. Ultra Palazzo · 190.50 Bs"
+  ]);
+});
+
+test("catalogo-v1: fallo al leer catálogo no manda imágenes ni marca catálogo enviado", async () => {
+  const error = new Error("catálogo no disponible");
+  const f = fixture({ query: async () => { throw error; } });
+  await assert.rejects(f.state.processMenuOption(PHONE, "1"), caught => caught === error);
+  assert.deepEqual(f.sent.map(call => call.type), ["text"]);
+  assert.deepEqual(f.catalogMarks, []);
+  assert.deepEqual(f.transitions(), []);
+});
 
 test("catálogo con productos envía producto:11..14 + asesor y persiste WAITING en orden", async () => {
   const f = fixture({ query: catalogQuery });
@@ -54,6 +192,9 @@ test("catálogo sin productos conserva outro y estado CATALOG", async () => {
   assert.deepEqual(f.sent.map(call => call.type), ["text", "image", "image", "image", "image", "text"]);
   assert.match(f.sent.at(-1).text, /opción 6/);
   assert.deepEqual(f.transitions(), [[PHONE, "CATALOG"]]);
+  // [ByCodex] (catalogo-v1) También conserva los captions originales.
+  assert.deepEqual(f.sent.filter(call => call.type === "image").map(call => call.caption),
+    ["Modelo 1 ✨", "Modelo 2 ✨", "Modelo 3 ✨", "🔥 Oferta del día"]);
 });
 
 test("getSelectionContext normaliza fila, usa vacío sin fila y propaga errores", async () => {
@@ -73,10 +214,13 @@ test("getSelectionContext normaliza fila, usa vacío sin fila y propaga errores"
   await assert.rejects(broken.state.getSelectionContext(PHONE), caught => caught === error);
 });
 
+// [ByCodex] (catalogo-v1) Precio NUMERIC se normaliza sin perder la clave de imagen.
 test("loadCatalogProducts consulta las cuatro image_key en orden, sin filtro disponible y limita a 9", async () => {
-  const f = fixture({ query: async () => ({ rows: [{ id: "11", nombre: "Modelo Uno" }] }) });
+  const f = fixture({ query: async () => ({ rows: [{
+    id: "11", nombre: "Modelo Uno", imagen_key: "IMAGE_MODELO_1", precio: "180.00"
+  }] }) });
   assert.deepEqual(JSON.parse(JSON.stringify(await f.state.loadCatalogProducts())),
-    [{ id: 11, nombre: "Modelo Uno" }]);
+    [{ id: 11, nombre: "Modelo Uno", imagen_key: "IMAGE_MODELO_1", precio: 180 }]);
   assert.deepEqual(Array.from(f.queries[0].params[0]), [
     "IMAGE_MODELO_1", "IMAGE_MODELO_2", "IMAGE_MODELO_3", "IMAGE_OFERTA_DIA"
   ]);
@@ -86,7 +230,8 @@ test("loadCatalogProducts consulta las cuatro image_key en orden, sin filtro dis
   assert.doesNotMatch(f.queries[0].sql, /disponible/);
 });
 
-test("parser puro resuelve ID, ordinal y modelo; vacío desactiva todo", () => {
+// [ByCodex] (catalogo-v1) Modelo N funciona sin contexto ordinal previo.
+test("parser puro resuelve ID, ordinal y modelo; modelo funciona con lista vacía", () => {
   const { state } = fixture();
   const ctx = { prendaId: null, lastShown: [11, 12, 13] };
   assert.deepEqual({ ...state.resolveProductSelection({ interactive: { type: "list_reply",
@@ -98,8 +243,8 @@ test("parser puro resuelve ID, ordinal y modelo; vacío desactiva todo", () => {
     state.STATES.WAITING_PRODUCT_SELECTION, ctx) }, { kind: "ordinal", index: 2 });
   assert.deepEqual({ ...state.resolveProductSelection({ text: { body: "quiero el modelo 2 talla M negro" } },
     state.STATES.MENU, ctx) }, { kind: "model_key", imageKey: "IMAGE_MODELO_2" });
-  assert.equal(state.resolveProductSelection({ text: { body: "modelo 2" } }, state.STATES.MENU,
-    { prendaId: null, lastShown: [] }), null);
+  assert.deepEqual({ ...state.resolveProductSelection({ text: { body: "modelo 2" } }, state.STATES.MENU,
+    { prendaId: null, lastShown: [] }) }, { kind: "model_key", imageKey: "IMAGE_MODELO_2" });
 });
 
 test("ordinal 2 elige el ID real 12 y conserva last_shown_products", async () => {
@@ -216,8 +361,9 @@ function selectedFixture(product, extras = {}) {
   });
 }
 
+// [ByCodex] (catalogo-v1) Descripción nullable también forma parte de la ficha.
 const SELECTED_PRODUCT = {
-  id: 12, nombre: "Modelo 2", precio: "150.00", disponible: true,
+  id: 12, nombre: "Modelo 2", descripcion: null, precio: "150.00", disponible: true,
   tallas: ["S", "M"], colores: ["Negro"]
 };
 
@@ -259,15 +405,17 @@ test("ruta 3 con precio cero, null o negativo y sin variaciones muestra Por conf
   }
 });
 
-test("ruta 3 con prenda muestra Bs 150.00, S, M y Negro y conserva el cierre actual", async () => {
+// [ByCodex] (catalogo-v1) Precio y cierre conforme al catálogo real.
+test("ruta 3 con prenda muestra 150 Bs, S, M y Negro y deriva para confirmar disponibilidad", async () => {
   const f = selectedFixture(SELECTED_PRODUCT);
   await f.state.processMenuOption(PHONE, "precios_tallas");
   const text = f.sent[0].text;
-  assert.match(text, /Precio: \*Bs 150\.00\*/);
+  assert.match(text, /Precio: \*150 Bs\*/);
+  assert.doesNotMatch(text, /Bs 150\.00/);
   assert.match(text, /Tallas: \*S, M\*/);
   assert.match(text, /Colores: \*Negro\*/);
   assert.ok(text.endsWith(
-    "Para ver precio y talla exactos de un modelo, tocá la *opción 6* del menú y te derivamos con una asesora que puede confirmártelos 💖\n\n" +
+    "Para confirmar disponibilidad de tu talla y color, tocá la *opción 6* del menú y te ayuda una asesora 💖\n\n" +
     "Escribí *menú* para volver al menú principal."
   ));
   assert.doesNotMatch(text, /no está disponible/);
@@ -280,6 +428,20 @@ test("ruta 3 agrega la línea de no disponible cuando disponible es false", asyn
   const f = selectedFixture({ ...SELECTED_PRODUCT, disponible: false });
   await f.state.processMenuOption(PHONE, "3");
   assert.match(f.sent[0].text, /Esta prenda no está disponible por ahora\./);
+});
+
+// [ByCodex] (catalogo-v1) La ficha muestra descripción y moneda sin publicar stock.
+test("catalogo-v1: ruta 3 muestra 180 Bs, descripción y talles reales", async () => {
+  const f = selectedFixture({ ...SELECTED_PRODUCT, nombre: "Maxi con bolsillo",
+    precio: "180.00", descripcion: "Bolsillos funcionales, cintura alta, pierna amplia.",
+    tallas: ["P", "M", "G", "GG"], stock: 0 });
+  await f.state.processMenuOption(PHONE, "3");
+  const text = f.sent[0].text;
+  assert.match(text, /Precio: \*180 Bs\*/);
+  assert.match(text, /Tallas: \*P, M, G, GG\*/);
+  assert.match(text, /• Bolsillos funcionales, cintura alta, pierna amplia\./);
+  assert.match(text, /Para confirmar disponibilidad de tu talla y color/);
+  assert.doesNotMatch(text, /Bs 180\.00|stock|unidades/);
 });
 
 test("rutas 3 y 4 sin prenda conservan exactamente los textos genéricos", async () => {
@@ -410,12 +572,13 @@ test("PostgreSQL: variaciones únicas y ordenadas, resume limpia selección y bo
     `, [phone, productId]);
     const f = fixture({ query: (sql, params) => client.query(sql, params) });
     const selected = await f.state.loadSelectedProduct(phone);
+    // [ByCodex] (catalogo-v1) Campo nuevo y formato de precio sobre PostgreSQL.
     assert.deepEqual(JSON.parse(JSON.stringify(selected)), {
-      id: productId, nombre, precio: 150, disponible: false,
+      id: productId, nombre, descripcion: null, precio: 150, disponible: false,
       tallas: ["S", "M"], colores: ["Blanco", "Negro"]
     });
     await f.state.processMenuOption(phone, "3");
-    assert.match(f.sent.at(-1).text, /Bs 150\.00/);
+    assert.match(f.sent.at(-1).text, /150 Bs/);
     assert.match(f.sent.at(-1).text, /S, M/);
     assert.match(f.sent.at(-1).text, /no está disponible por ahora/);
 
@@ -443,6 +606,55 @@ test("PostgreSQL: variaciones únicas y ordenadas, resume limpia selección y bo
     assert.match(generic, /^📏 \*Precios y tallas\*/);
     assert.match(generic, /Nuestros precios y tallas dependen del modelo específico\./);
     assert.ok(!generic.includes(nombre));
+  } finally {
+    try {
+      if (transactionStarted) await client.query("ROLLBACK");
+    } finally {
+      await client.end();
+    }
+  }
+});
+
+// [ByCodex] (catalogo-v1) Prueba las cuatro fichas reales; solo persiste dentro de ROLLBACK.
+test("PostgreSQL: catálogo real, selección por nombre sin lista, precios y escala P M G GG", {
+  skip: process.env.DEDUP_TEST_DATABASE !== "1" ? "requiere DEDUP_TEST_DATABASE=1" : false,
+  timeout: 60000
+}, async () => {
+  require("dotenv").config({ quiet: true });
+  const { Client } = require("pg");
+  const client = new Client({ connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false } });
+  const phone = `0${BigInt(`0x${randomUUID().replaceAll("-", "")}`).toString().slice(0, 14)}`;
+  let transactionStarted = false;
+  try {
+    await client.connect();
+    await client.query("BEGIN");
+    transactionStarted = true;
+    const f = fixture({ business: BUSINESS, query: (sql, params) => client.query(sql, params) });
+    const catalog = await f.state.loadCatalogProducts();
+    assert.deepEqual(catalog.map(product => product.nombre),
+      ["Maxi con bolsillo", "Efecto Lipo", "Figura 10", "Ultra Palazzo"]);
+    assert.deepEqual(catalog.map(product => product.precio), [180, 160, 160, 190]);
+    for (const [index, text] of ["maxi palazzo", "efecto lipo talla M", "figura 10", "quiero el palazzo"].entries()) {
+      const ctx = { prendaId: null, lastShown: [] };
+      const pick = f.state.resolveProductSelection({ text: { body: text } }, f.state.STATES.MENU, ctx);
+      await f.state.handleProductPick(phone, pick, ctx);
+      assert.match(f.sent.at(-1).body, new RegExp(`Elegiste \\*${catalog[index].nombre}\\*`));
+      const selected = await f.state.loadSelectedProduct(phone);
+      assert.equal(selected.id, catalog[index].id);
+      assert.deepEqual(Array.from(selected.tallas), index === 3 ? ["P", "M", "G"] : ["P", "M", "G", "GG"]);
+      assert.ok(selected.descripcion);
+      await f.state.processMenuOption(phone, "3");
+      const reply = f.sent.at(-1).text;
+      assert.ok(reply.includes(`• Precio: *${catalog[index].precio} Bs*.`));
+      assert.ok(reply.includes(`• ${selected.descripcion}`));
+      assert.doesNotMatch(reply, /stock|unidades|Bs \d+\.00/);
+    }
+    await f.state.processMenuOption(phone, "1");
+    assert.deepEqual(f.sent.filter(call => call.type === "image").map(call => call.caption), [
+      "1. Maxi con bolsillo · 180 Bs", "2. Efecto Lipo · 160 Bs",
+      "3. Figura 10 · 160 Bs", "4. Ultra Palazzo · 190 Bs"
+    ]);
   } finally {
     try {
       if (transactionStarted) await client.query("ROLLBACK");

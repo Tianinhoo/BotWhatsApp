@@ -16,14 +16,24 @@
 
 module.exports = {
 
+  // [ByCodex] (catalogo-v1) El primer alias coincidente define la prenda.
+  alias_productos: [
+    { imageKey: "IMAGE_MODELO_1", palabras: ["maxi"] },
+    { imageKey: "IMAGE_MODELO_2", palabras: ["lipo"] },
+    { imageKey: "IMAGE_MODELO_3", palabras: ["figura 10", "figura"] },
+    { imageKey: "IMAGE_OFERTA_DIA", palabras: ["palazzo", "impacto"] }
+  ],
+
   // Rango de precios (por definir con el negocio). Formato:
   //   { desde: "Bs 150", hasta: "Bs 350" } → confirmado.
   //   null → mostramos "Por confirmar" o quitamos del texto.
-  precios: null,
+  // [ByClaude] 2026-10-10: confirmado por el usuario (docs/CATALOGO-V1.md).
+  precios: { desde: "160 Bs", hasta: "190 Bs" },
 
   // Tallas disponibles. Por ejemplo ["S", "M", "L", "XL"].
   // null → "Por confirmar".
-  tallas: null,
+  // [ByClaude] 2026-10-10: GG no aplica a Ultra Palazzo; la ruta dice "(según modelo)".
+  tallas: ["P", "M", "G", "GG"],
 
   // Horario de atención humana. Ejemplo: "Lun a Sáb, 9:00 a 19:00".
   // null → "Por confirmar".

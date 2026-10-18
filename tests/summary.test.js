@@ -25,6 +25,17 @@ function msg(contenido) {
 }
 
 
+// [ByClaude] (BRIEF-025) Hallazgo del simulador: "hola · menú" ensuciaba Necesidad.
+test("necesidad: ignora saludos, palabras de navegación y ordinales 1-9", () => {
+  const s = summary.buildFromContext({ phone: "59100000000", clientMessages: [
+    msg("Hola!"), msg("menú"), msg("8"), msg("quiero el modelo 3 talla M negro"), msg("volver")
+  ] });
+  assert.equal(s.necesidad, "quiero el modelo 3 talla M negro");
+  assert.equal(summary.buildFromContext({ phone: "1", clientMessages: [msg("hola"), msg("menu")] })
+    .necesidad, "Por confirmar");
+});
+
+
 // ------------------------------------------------------
 // BRIEF-015: bug del "6" como interés
 // ------------------------------------------------------

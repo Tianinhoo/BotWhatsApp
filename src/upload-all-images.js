@@ -8,11 +8,12 @@ const FormData = require("form-data");
 // [ByOpenCode] (BRIEF-006) safeError: nunca loguear error.config (token).
 const { safeError } = require("./services/logger.service");
 
+// [ByCodex] (catalogo-v1) Portadas reales; conserva las claves de .env.
 const images = [
-  { key: "IMAGE_MODELO_1", file: "modelo1-fixed.jpg" },
-  { key: "IMAGE_MODELO_2", file: "modelo2-fixed.jpg" },
-  { key: "IMAGE_MODELO_3", file: "modelo3-fixed.jpg" },
-  { key: "IMAGE_OFERTA_DIA", file: "oferta-dia-fixed.jpg" }
+  { key: "IMAGE_MODELO_1", file: "catalogo/maxi-01-portada.jpg" },
+  { key: "IMAGE_MODELO_2", file: "catalogo/lipo-01-portada.jpg" },
+  { key: "IMAGE_MODELO_3", file: "catalogo/figura10-01-portada.jpg" },
+  { key: "IMAGE_OFERTA_DIA", file: "catalogo/palazzo-01-portada.jpg" }
 ];
 
 async function uploadOneImage(fileName) {

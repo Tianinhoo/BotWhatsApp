@@ -1,0 +1,13 @@
+[build]
+builder = "nixpacks"
+
+[build.nixpacks]
+nodeVersion = "22"
+
+[deploy]
+startCommand = "npm start"
+healthcheckPath = "/health"
+healthcheckTimeout = 10
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 5
+numReplicas = 1

@@ -80,6 +80,16 @@ const MENU_OPTION_RX = /^\[Opción del menú:\s*(.+?)\]\s*$/;
 // [ByClaude] (BRIEF-015) Devuelve solo los mensajes del cliente que son
 // texto libre (no marcas internas). Preserva el orden original.
 // [ByCodex] (BRIEF-016) Integración: los números 1–7 aislados son comandos del menú, no contexto.
+// [ByClaude] (BRIEF-025) Para "Necesidad": saludos y palabras de navegación
+// no son contexto; los ordinales de la lista de prendas llegan hasta 9.
+const NAV_ONLY = new Set(["menu", "menú", "volver", "inicio", "opciones", "hola",
+  "buenas", "buenos dias", "buenos días", "buenas tardes", "buenas noches"]);
+
+function isNavigationOnly(text) {
+  const key = text.toLowerCase().replace(/[!¡.,¿?\s]+/g, " ").trim();
+  return /^[1-9]$/.test(key) || NAV_ONLY.has(key);
+}
+
 function keepFreeText(messages) {
   return messages
     .filter((m) => (m.origen || "cliente") === "cliente")
@@ -157,7 +167,9 @@ function extractInteres(clientMessages, { modelo = null, color = null } = {}) {
 // también devuelve "Por confirmar" para no duplicar información.
 function extractNecesidad(clientMessages, { alreadyCaptured = {} } = {}) {
 
-  const freeText = keepFreeText(clientMessages).map((m) => m.contenido);
+  const freeText = keepFreeText(clientMessages)
+    .map((m) => m.contenido)
+    .filter((text) => !isNavigationOnly(text));
   if (freeText.length === 0) return "Por confirmar";
 
   const last = freeText.slice(-3).join(" · ").slice(0, 300);

@@ -376,11 +376,12 @@ async function getSelectionContext(phone) {
 // [ByCodex] (BRIEF-025) Una lectura para la prenda y sus variaciones.
 // DISTINCT/FILTER evitan duplicados y nulos del LEFT JOIN; las tallas
 // siguen su escala habitual (S antes de M), y el resto el orden textual.
+// [ByCodex] (catalogo-v1) Descripción real y escala de talles de la tienda.
 async function loadSelectedProduct(phone) {
   const result = await pool.query(
     `
       WITH selected AS (
-        SELECT p.id, p.nombre, p.precio, p.disponible,
+        SELECT p.id, p.nombre, p.descripcion, p.precio, p.disponible,
           COALESCE(
             array_agg(DISTINCT v.talla ORDER BY v.talla)
               FILTER (WHERE v.talla IS NOT NULL),
@@ -397,11 +398,11 @@ async function loadSelectedProduct(phone) {
         WHERE c.telefono = $1
         GROUP BY p.id
       )
-      SELECT id, nombre, precio, disponible,
+      SELECT id, nombre, descripcion, precio, disponible,
         ARRAY(
           SELECT talla FROM unnest(tallas) AS talla
           ORDER BY array_position(
-            ARRAY['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL'], talla
+            ARRAY['XXS', 'XS', 'P', 'S', 'M', 'G', 'L', 'XL', 'GG', 'XXL', 'XXXL'], talla
           ), talla
         ) AS tallas,
         colores
@@ -416,6 +417,7 @@ async function loadSelectedProduct(phone) {
   return {
     id: Number(row.id),
     nombre: row.nombre,
+    descripcion: row.descripcion || null,
     precio: row.precio == null ? null : Number(row.precio),
     disponible: row.disponible,
     tallas: row.tallas || [],
@@ -426,10 +428,11 @@ async function loadSelectedProduct(phone) {
 
 // [ByCodex] (BRIEF-025) La lista sigue el mismo orden que las imágenes y
 // no oculta filas por `disponible`: disponibilidad se trata en otra ruta.
+// [ByCodex] (catalogo-v1) Un mismo catálogo para lista, imágenes y precios.
 async function loadCatalogProducts() {
   const result = await pool.query(
     `
-      SELECT id, nombre
+      SELECT id, nombre, imagen_key, precio
       FROM productos
       WHERE imagen_key = ANY($1)
       ORDER BY array_position($1::text[], imagen_key)
@@ -438,7 +441,10 @@ async function loadCatalogProducts() {
     [CATALOG_IMAGE_KEYS]
   );
 
-  return result.rows.map(row => ({ id: Number(row.id), nombre: row.nombre }));
+  return result.rows.map(row => ({
+    id: Number(row.id), nombre: row.nombre, imagen_key: row.imagen_key,
+    precio: row.precio == null ? null : Number(row.precio)
+  }));
 }
 
 
@@ -534,9 +540,9 @@ function extractSelection(message) {
 
 // [ByCodex] (BRIEF-025) Parser puro y contextual para la prenda. Los IDs
 // interactivos se validan contra la última lista realmente mostrada.
+// [ByCodex] (catalogo-v1) Los nombres no requieren una lista previa.
 function resolveProductSelection(message, state, ctx) {
   const lastShown = Array.isArray(ctx?.lastShown) ? ctx.lastShown : [];
-  if (lastShown.length === 0) return null;
 
   const interactive = message?.interactive;
   const interactiveId = interactive?.type === "list_reply"
@@ -549,6 +555,7 @@ function resolveProductSelection(message, state, ctx) {
     ? interactiveId.match(/^producto:(\d+)$/)
     : null;
   if (productMatch) {
+    if (lastShown.length === 0) return null;
     const productId = Number(productMatch[1]);
     return lastShown.includes(productId)
       ? { kind: "product", productId }
@@ -558,11 +565,21 @@ function resolveProductSelection(message, state, ctx) {
   const text = message?.text?.body;
   if (typeof text !== "string") return null;
 
-  if (state === STATES.WAITING_PRODUCT_SELECTION && /^\s*[1-9]\s*$/.test(text)) {
+  if (lastShown.length > 0 && state === STATES.WAITING_PRODUCT_SELECTION && /^\s*[1-9]\s*$/.test(text)) {
     return { kind: "ordinal", index: Number(text.trim()) - 1 };
   }
 
-  const modelMatch = text.match(/\bmodelo\s*([1-3])\b/i);
+  const normalize = value => value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+  const normalized = normalize(text);
+  for (const { imageKey, palabras } of business.alias_productos || []) {
+    for (const palabra of palabras) {
+      const escaped = normalize(palabra).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const pattern = new RegExp(`(?:^|[^\\p{L}\\p{N}_])${escaped}(?=$|[^\\p{L}\\p{N}_])`, "u");
+      if (pattern.test(normalized)) return { kind: "model_key", imageKey };
+    }
+  }
+
+  const modelMatch = normalized.match(/\bmodelo\s*([1-3])\b/);
   if (modelMatch) {
     return { kind: "model_key", imageKey: `IMAGE_MODELO_${modelMatch[1]}` };
   }
@@ -732,8 +749,10 @@ async function selectProduct(phone, productId, prevId) {
 
 // [ByCodex] (BRIEF-025) Resuelve ordinales y claves visuales contra el
 // contexto mostrado; cualquier valor stale reabre una lista vigente.
+// [ByCodex] (catalogo-v1) Sin lista previa, validar nombres contra el catálogo.
 async function handleProductPick(phone, pick, ctx) {
   const lastShown = Array.isArray(ctx?.lastShown) ? ctx.lastShown : [];
+  let allowedIds = lastShown;
   let productId = null;
 
   if (pick?.kind === "product") {
@@ -741,15 +760,18 @@ async function handleProductPick(phone, pick, ctx) {
   } else if (pick?.kind === "ordinal") {
     productId = lastShown[pick.index];
   } else if (pick?.kind === "model_key") {
+    if (lastShown.length === 0) {
+      allowedIds = (await loadCatalogProducts()).map(product => product.id);
+    }
     const result = await pool.query(
       `SELECT id FROM productos WHERE imagen_key = $1 LIMIT 1`,
       [pick.imageKey]
     );
     const candidate = result.rows[0] ? Number(result.rows[0].id) : null;
-    if (candidate != null && lastShown.includes(candidate)) productId = candidate;
+    if (candidate != null && allowedIds.includes(candidate)) productId = candidate;
   }
 
-  if (!Number.isInteger(Number(productId)) || !lastShown.includes(Number(productId))) {
+  if (productId == null || !Number.isInteger(Number(productId)) || !allowedIds.includes(Number(productId))) {
     await showProductList(phone, {
       hint: "No pude identificar esa prenda. Elegí una de la lista 👇"
     });
@@ -763,16 +785,31 @@ async function handleProductPick(phone, pick, ctx) {
 // [ByClaude] Envía las 4 imágenes del catálogo (3 modelos + oferta del día).
 // No agrega textos: el llamador decide el mensaje de intro y de outro.
 // [ByCodex] (BRIEF-011) Registrar cada imagen; un fallo detiene catálogo y transición de estado.
+// [ByCodex] (catalogo-v1) Moneda al final; enteros sin decimales.
+function formatProductPrice(price) {
+  const amount = Number(price);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  return `${Number.isInteger(amount) ? amount : amount.toFixed(2)} Bs`;
+}
+
+// [ByCodex] (catalogo-v1) Captions y media_id salen del catálogo vigente.
 async function sendCatalogImages(phone) {
-  for (const [imageId, caption] of [
+  const products = await loadCatalogProducts();
+  const images = products.length > 0 ? products.map((product, index) => {
+    const price = formatProductPrice(product.precio);
+    return [process.env[product.imagen_key],
+      `${index + 1}. ${product.nombre}${price ? ` · ${price}` : ""}`];
+  }) : [
     [process.env.IMAGE_MODELO_1, "Modelo 1 ✨"],
     [process.env.IMAGE_MODELO_2, "Modelo 2 ✨"],
     [process.env.IMAGE_MODELO_3, "Modelo 3 ✨"],
     [process.env.IMAGE_OFERTA_DIA, "🔥 Oferta del día"]
-  ]) {
+  ];
+  for (const [imageId, caption] of images) {
     await sendAndRecord(phone, `[Imagen: ${caption}]`, () => sendImageMessage(phone, imageId, caption));
   }
   await saveMessage(phone, "bot", "[Catálogo enviado]");
+  return products;
 }
 
 
@@ -787,11 +824,11 @@ async function replyCatalog(phone, { isFirstTime = false } = {}) {
     : "¡Claro! 😊 Te muestro de nuevo nuestros modelos y promociones.";
 
   await sendAndLog(phone, intro);
-  await sendCatalogImages(phone);
+  // [ByCodex] (catalogo-v1) La lista usa las mismas filas que los captions.
+  const products = await sendCatalogImages(phone);
 
   await markCatalogSent(phone);
 
-  const products = await loadCatalogProducts();
   if (products.length > 0) {
     await sendProductList(phone, products);
     return;
@@ -821,11 +858,11 @@ async function replyNewModels(phone) {
     "Estas son las últimas prendas que llegaron a la tienda:";
 
   await sendAndLog(phone, intro);
-  await sendCatalogImages(phone);
+  // [ByCodex] (catalogo-v1) La lista usa las mismas filas que los captions.
+  const products = await sendCatalogImages(phone);
 
   await markCatalogSent(phone);
 
-  const products = await loadCatalogProducts();
   if (products.length > 0) {
     await sendProductList(phone, products);
     return;
@@ -857,10 +894,12 @@ async function replyPricesAndSizes(phone) {
     : ["📏 *Precios y tallas*", ""];
 
   if (product) {
-    const price = product.precio > 0 ? `Bs ${product.precio.toFixed(2)}` : "Por confirmar";
+    // [ByCodex] (catalogo-v1) Ficha de la prenda con precio y descripción reales.
+    const price = formatProductPrice(product.precio) || "Por confirmar";
     partes.push(`• Precio: *${price}*.`);
     partes.push(`• Tallas: *${product.tallas.length ? product.tallas.join(", ") : "Por confirmar"}*.`);
     partes.push(`• Colores: *${product.colores.length ? product.colores.join(", ") : "Por confirmar"}*.`);
+    if (product.descripcion) partes.push(`• ${product.descripcion}`);
 
     if (product.disponible === false) {
       partes.push("• Esta prenda no está disponible por ahora.");
@@ -881,7 +920,10 @@ async function replyPricesAndSizes(phone) {
   }
 
   partes.push("");
-  partes.push("Para ver precio y talla exactos de un modelo, tocá la *opción 6* del menú y te derivamos con una asesora que puede confirmártelos 💖");
+  // [ByCodex] (catalogo-v1) Con prenda elegida, la asesora confirma disponibilidad.
+  partes.push(product
+    ? "Para confirmar disponibilidad de tu talla y color, tocá la *opción 6* del menú y te ayuda una asesora 💖"
+    : "Para ver precio y talla exactos de un modelo, tocá la *opción 6* del menú y te derivamos con una asesora que puede confirmártelos 💖");
   partes.push("");
   partes.push("Escribí *menú* para volver al menú principal.");
 
